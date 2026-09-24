@@ -1,92 +1,103 @@
 # TARBANK
 
-## High level description
+## Overview
 
-Develop a service that simulates basic banking operations in a programming language of your choice. This service will manage accounts, process deposits, withdrawals, and transfers between accounts.
+Develop a service, in a programming language of your choice, that simulates basic banking operations. The service manages accounts and processes deposits, withdrawals, and transfers between accounts.
 
-This test aims to assess your problem-solving skills by building a system that reflects the real-world constraints of a bank. It will also evaluate your ability to adhere to engineering best practices. Please keep this in mind and incorporate anything you consider relevant to both areas.
+This test assesses problem-solving skills through a system that reflects real-world banking constraints. It also evaluates adherence to engineering best practices; incorporate anything relevant to both areas.
 
-## Basic requirements
+## Service delivery
 
-1. A class or set of functions that allow:
-   - Account creation: Allow users to create an account with an initial deposit.
-   - Deposit: Enable users to deposit money into their account.
-   - Withdrawal: Allow users to withdraw money from their account, ensuring that overdrafts are not allowed.
-   - Transfer: Enable transferring funds between accounts.
-   - Account balance: Provide the ability to check the account balance.
+- Provide a REST API.
+- In-memory storage is sufficient; no database is required alongside the project, though one may be added at your discretion.
 
-2. Database:
-   - In-memory data storage will suffice, no need to have a database alongside the project, but you can add one at your discretion
+## Authentication and authorization
 
-## Functional requirements
+### Authentication
 
-1. Service provides a REST API for:
-   - JWT auth/auth as a basic security mechanism
-        - Username and password with hashing and salting the password
-        - Jwt token expires in configurable amount of minutes. By default it should be in 1 hour.
-        - Password can be reset
-   - Role model:
-        - manager
-        - customer
-        - Customer: view/manage only own permitted resources; deposit, withdraw, transfer.
-        - Manager: create/manage customers and accounts; block/unblock.
-   - Customers:
-        - create a new one
-        - get information about existing one
-        - update existing customer
-        - soft delete and his accounts (can't be restored)
-        - block customer and his accounts (can be restored)
-   - Managing accounts:
-        - create a new one
-        - get information about existing one
-        - update existing account
-        - soft delete (can't be restored)
-        - block account (can be restored)
-        - deposit money onto an account
-        - withdraw money from an account
-        - transfer money from one account to another
-        - Customer can own few accounts at the same time
-        - Manager creates an account on behalf of a customer
-        - Customer can't create accounts
-        - Founds can't be deposited, withdrawn or transfered to or from a blocked account
+- Use JWT authentication as the basic security mechanism.
+- Authenticate with a username and password; passwords must be hashed and salted.
+- JWT expiry must be configurable and default to one hour.
+- Support password reset.
 
-   Some API should be accessible only from manager account because in real world customer cant obtain certain services without managers authorization.
+### Roles and access
 
-   - Service should support different currencies and currency can be specified only during account creation.
-   - Cross-currency is not supported, but code support integration of that feature
-   - Value precision is DECIMAL(19, 4)
-   - Amount can't go below zero
-   - Transactions are atomic. Concurrent transfers must not allow the balance to go below zero.
-   - Idempotency rule should be supported to prevent accidental double operations
+- Support two roles: `manager` and `customer`.
+- A customer can view and manage only permitted resources of their own, and can deposit, withdraw, and transfer funds.
+- A manager can create and manage customers and accounts, and can block or unblock them.
+- APIs that require manager authorization must be accessible only to manager accounts, as customers cannot obtain certain services without a manager's authorization.
 
-2. Monitoring tools (metrics, logging, tracing, audit)
-    - Structured logs with correlation/request IDs.
-    - Metrics for latency, errors, and transaction outcomes.
-    - Audit records for money movement and manager actions.
-    - Do not write credentials, JWTs, or unnecessary personal data to logs.
-3. Service should provide an interface to support customer and service level notifications
-4. Security constraints:
-   - How much money can be withdrawn or transferd from an account per day. It should be configurable.
-        - Limits are per account
-        - Limits for withdrawal and transfers are different
-        - Timezone of the customer defines "day"
-        - Failed operations dont count
-        - Limits should be durable against concurrent modifications and should be done with atomicity and idempotency
-5. Service should track history of accounts
+## Customer management
 
-## Non-functional requirements
+- Create a customer.
+- Retrieve an existing customer.
+- Update an existing customer.
+- Soft-delete a customer and their accounts; this cannot be restored.
+- Block a customer and their accounts; this can be restored.
 
-1. Basic security steps to protect information about transactions and personal data.
-2. Should respond in less than 2 seconds
-3. The system should be able to handle 100 million users with minimal downtime.
+## Account management
+
+### Ownership and lifecycle
+
+- A customer can own several accounts at the same time.
+- A manager creates an account on behalf of a customer; customers cannot create accounts.
+- Create an account with an initial deposit.
+- Retrieve an existing account.
+- Update an existing account.
+- Soft-delete an account; this cannot be restored.
+- Block an account; this can be restored.
+
+### Banking operations
+
+- Check an account balance.
+- Deposit money into an account.
+- Withdraw money from an account without allowing overdrafts.
+- Transfer money between accounts.
+- Funds cannot be deposited, withdrawn, or transferred to or from a blocked account.
+
+## Money, currencies, and transaction rules
+
+### Money and currencies
+
+- Support different currencies; select an account's currency only during account creation.
+- Cross-currency transfers are not supported, but the code must support integrating that feature.
+- Use `DECIMAL(19, 4)` value precision.
+- Amounts cannot be below zero.
+
+### Transaction integrity and limits
+
+- Transactions must be atomic. Concurrent transfers must not allow an account balance to go below zero.
+- Support idempotency to prevent accidental duplicate operations.
+- The daily amount that can be withdrawn or transferred from an account must be configurable.
+  - Limits are per account.
+  - Withdrawal and transfer limits are separate.
+  - A customer's timezone defines a day.
+  - Failed operations do not count toward limits.
+  - Limits must remain durable under concurrent changes and use atomicity and idempotency.
+
+## History, notifications, and observability
+
+- Track account history.
+- Provide an interface that supports customer- and service-level notifications.
+- Provide monitoring tools for metrics, logging, tracing, and auditing.
+  - Use structured logs with correlation or request IDs.
+  - Provide metrics for latency, errors, and transaction outcomes.
+  - Record audits for money movement and manager actions.
+  - Do not log credentials, JWTs, or unnecessary personal data.
+
+## Security and performance
+
+- Take basic security steps to protect transaction information and personal data.
+- Respond in less than two seconds.
+- Handle 100 million users with minimal downtime.
 
 ## Technologies
 
-Backend tech-stack
+### Backend tech stack
 
-- Java 25 lts
-- Spring (Boot, Security, Data Jpa): latest
+- Java 25 LTS
+- Spring (Boot, Security, Data JPA): latest
 - Hibernate (QueryDSL): latest
 - Swagger OpenAPI: latest
-- PostgreSQL: latest - general purpose DB
-- Redis: latest - storing and invalidating jwt tokens 
+- PostgreSQL: latest - general-purpose database
+- Redis: latest - storing and invalidating JWT tokens
