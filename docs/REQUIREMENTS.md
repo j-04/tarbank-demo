@@ -53,7 +53,7 @@ When creating an account, select one supported currency. The account starts with
 
 ### Supported currencies and amounts
 
-- Support USD, EUR, and PHP.
+- Support EUR and USD.
 - Use `DECIMAL(19, 4)` value precision for avoiding floating-point rounding errors.
 - Amounts cannot be below zero. Deposits, withdrawals, and transfers of zero are not permitted; every money-moving operation requires a positive amount.
 - Cross-currency deposits, withdrawals, and transfers are not supported, but the code must support future integration of that feature.
@@ -74,10 +74,10 @@ When creating an account, select one supported currency. The account starts with
 The daily amount that can be withdrawn or transferred from an account must be configurable.
 
 - Limits are per account.
-- Withdrawal and transfer limits are separate and receive independent defaults: USD 1,000, EUR 1,000, and PHP 70,000.
+- Withdrawal and transfer limits are separate and receive independent defaults: EUR 1,000 and USD 1,000.
 - Customers can update limits without manager approval. An updated limit applies until the end of the current day and resets to the default value at 12:00 a.m.
-- A customer may increase a limit for the current day up to EUR 3,000, USD 3,000, or PHP 200,000.
-- Set minimum withdrawal amounts of EUR 5, USD 5, and PHP 100.
+- A customer may increase a limit for the current day up to EUR 3,000 or USD 3,000.
+- Set minimum withdrawal amounts of EUR 5 and USD 5.
 - A customer's timezone defines a day.
 - Failed operations do not count toward limits.
 - Limits must remain durable under concurrent changes and be atomic and idempotent.
@@ -132,7 +132,7 @@ The daily amount that can be withdrawn or transferred from an account must be co
 ## Technology stack
 
 - Java 25 LTS
-- Spring: Boot, Security, Data JPA, and Test (latest compatible versions)
+- Spring: Boot, Security, and Test (latest compatible versions)
 - Hibernate with QueryDSL (latest compatible version)
 - Swagger OpenAPI (latest compatible version)
 - PostgreSQL: mandatory primary database
