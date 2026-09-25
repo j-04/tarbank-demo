@@ -90,6 +90,9 @@ A normalized document number is additionally protected with an HMAC-SHA-256 look
 | document_expires_on | date | nullable; if present, must be valid at customer creation; validated by service | Identity-document expiry date |
 | timezone | varchar(64) | not null; immutable after customer creation | IANA timezone used for daily limits |
 | manager_id | bigint | nullable; FK managers.user_id | Manager responsible for the customer |
+| version | integer | not null; default 0; incremented on profile or status changes | Source for the customer ETag |
+| status_changed_by_manager_id | bigint | nullable; FK managers.user_id | Manager who last changed customer status |
+| status_changed_at | timestamptz | nullable | Time of the last customer status change |
 | (document_type, document_issuing_country, document_number_hash) | - | unique | Prevent duplicate customer identity documents |
 
 ### Accounts
@@ -102,6 +105,9 @@ A normalized document number is additionally protected with an HMAC-SHA-256 look
 | currency | char(3) | not null; `EUR` or `USD`; immutable | Account currency |
 | balance | numeric(19,4) | not null; default 0; greater than or equal to 0 | Current available balance |
 | status | varchar(20) | not null; `ACTIVE`, `BLOCKED`, or `DEACTIVATED` | Account lifecycle state |
+| status_changed_by_manager_id | bigint | nullable; FK managers.user_id | Manager who last changed account status |
+| status_changed_at | timestamptz | nullable | Time of the last account status change |
+| management_version | integer | not null; default 0; incremented on status or daily-limit changes, not money movements | Source for the account ETag |
 | created_by_manager_id | bigint | not null; FK managers.user_id | Manager who created the account |
 | created_at | timestamptz | not null | Creation time |
 | updated_at | timestamptz | not null | Last update |
@@ -167,7 +173,27 @@ A transfer has two entries: a negative source entry and a positive destination e
 | updated_at | timestamptz | not null | Last update |
 | (customer_id, account_id, operation_type, idempotency_key) | - | unique | Idempotency scope |
 
+### API request idempotency records
+
+This generic record supports non-money requests that can create resources or have a retry-sensitive side effect. Money operations continue to use the dedicated idempotency records above.
+
+| Field | Type | Constraints | Description |
+| --- | --- | --- | --- |
+| id | bigserial | primary key | Internal identifier |
+| actor_user_id | bigint | not null; FK users.id | Authenticated actor who made the request |
+| operation | varchar(100) | not null | API operation, such as CUSTOMER_CREATE or DAILY_LIMIT_UPDATE |
+| resource_scope | varchar(255) | not null | Scope affected by the operation, such as customers or account number |
+| idempotency_key | uuid | not null; UUID v4 | Client-generated request key |
+| request_hash | varchar(64) | not null | Normalized request hash used to reject changed retries |
+| response_status | integer | nullable | HTTP response status retained for replay |
+| response_body | jsonb | nullable | HTTP response body retained for replay |
+| expires_at | timestamptz | not null | Configurable retention deadline |
+| created_at | timestamptz | not null | Creation time |
+| (actor_user_id, operation, resource_scope, idempotency_key) | - | unique | Generic idempotency scope |
+
 ### Audit events
+
+Audit events preserve the complete manager-action history. A customer or account status transition writes an event with action CUSTOMER_STATUS_CHANGED or ACCOUNT_STATUS_CHANGED, the manager as actor, the old and new statuses in metadata, and the same database transaction as the status update. Blocking or deactivating a customer records the same manager as actor for every affected account status transition.
 
 | Field | Type | Constraints | Description |
 | --- | --- | --- | --- |
@@ -192,7 +218,7 @@ Temporary overrides expire at midnight in the customer's timezone. A later chang
 | limit_amount | numeric(19,4) | not null; greater than or equal to 5 | Temporary daily limit |
 | effective_date | date | not null | Customer-local date to which the override applies |
 | expires_at | timestamptz | not null | Midnight in the customer's timezone |
-| updated_by_manager_id | bigint | not null; FK managers.user_id | Manager who set the override |
+| updated_by_user_id | bigint | not null; FK users.id | Customer or manager who set the override |
 | created_at | timestamptz | not null | Creation time |
 | updated_at | timestamptz | not null | Last update |
 | (account_id, operation_type, effective_date) | - | unique | One override for a given account, operation type, and day |
@@ -213,23 +239,102 @@ This durable aggregate is updated in the same database transaction as the money 
 
 ## REST API
 
-This initial API slice covers authentication and the essential customer banking flow. All endpoints use JSON and are versioned under /api/v1. The server generates a correlation identifier for each request; it returns that value in the X-Correlation-Id response header and in every response body.
+All endpoints use JSON and are versioned under /api/v1. A client may supply X-Correlation-Id as a UUID. When supplied, the service preserves that identifier unchanged in logs, response headers, response bodies, and downstream calls. When the header is absent, the service generates a UUID. An invalid correlation identifier is rejected with 400 VALIDATION_ERROR. Timestamps use ISO 8601 UTC strings. Money amounts are decimal strings with up to four fractional digits.
 
-### Initial endpoints
+All endpoints accept the optional X-Correlation-Id UUID header. Protected endpoints require the Authorization: Bearer JWT header. No response returns a password, password hash, identity-document number, document lookup hash, or encryption material. Password creation and reset occur only through the manager-assisted secure branch terminal flow; there is no standalone public password-reset endpoint.
 
-| Endpoint | Authorization | Contract | JSON or outcome |
-| --- | --- | --- | --- |
-| POST /api/v1/auth/login | None | Request JSON | {<br>&nbsp;&nbsp;"username": "alice",<br>&nbsp;&nbsp;"password": "DemoPass123!"<br>} |
-|  |  | 200 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"accessToken": "jwt",<br>&nbsp;&nbsp;&nbsp;&nbsp;"tokenType": "Bearer",<br>&nbsp;&nbsp;&nbsp;&nbsp;"expiresInSeconds": 3600<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
-|  |  | Errors | 400 VALIDATION_ERROR; 401 INVALID_CREDENTIALS; 429 RATE_LIMIT_EXCEEDED |
-| GET /api/v1/accounts/{accountNumber} | Account-owning customer or an authorized manager | Request JSON | No request body |
-|  |  | 200 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"accountNumber": "TB00000000000001",<br>&nbsp;&nbsp;&nbsp;&nbsp;"currency": "EUR",<br>&nbsp;&nbsp;&nbsp;&nbsp;"availableBalance": "125.5000",<br>&nbsp;&nbsp;&nbsp;&nbsp;"status": "ACTIVE"<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
-|  |  | Errors | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 429 RATE_LIMIT_EXCEEDED |
-| POST /api/v1/accounts/{accountNumber}/transfers | Account-owning customer | Request | Header: Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000<br>Body:<br>{<br>&nbsp;&nbsp;"destinationAccountNumber": "TB00000000000002",<br>&nbsp;&nbsp;"amount": "25.0000"<br>} |
-|  |  | 201 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"transactionId": "uuid",<br>&nbsp;&nbsp;&nbsp;&nbsp;"status": "COMPLETED",<br>&nbsp;&nbsp;&nbsp;&nbsp;"sourceAccountNumber": "TB00000000000001",<br>&nbsp;&nbsp;&nbsp;&nbsp;"destinationAccountNumber": "TB00000000000002",<br>&nbsp;&nbsp;&nbsp;&nbsp;"amount": "25.0000",<br>&nbsp;&nbsp;&nbsp;&nbsp;"currency": "EUR",<br>&nbsp;&nbsp;&nbsp;&nbsp;"completedAt": "timestamp"<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
-|  |  | Errors | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 422 INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, ACCOUNT_NOT_ACTIVE, or CURRENCY_MISMATCH; 429 RATE_LIMIT_EXCEEDED |
+### Authentication
 
-The transfer source account is the accountNumber path parameter. Its currency determines the transfer currency, so the request does not provide a separate currency field.
+| Endpoint | Description |
+| --- | --- |
+| POST /api/v1/auth/login | Authenticates a user and issues a JWT access token. |
+| POST /api/v1/auth/logout | Invalidates the current JWT so it cannot be used again. |
+
+| Endpoint | Authorization | Headers | Query parameters | Request body | Successful response | Expected errors |
+| --- | --- | --- | --- | --- | --- | --- |
+| POST /api/v1/auth/login | None | Content-Type: application/json | None | {<br>&nbsp;&nbsp;"username": "alice",<br>&nbsp;&nbsp;"password": "DemoPass123!"<br>} | 200: {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"accessToken": "jwt",<br>&nbsp;&nbsp;&nbsp;&nbsp;"tokenType": "Bearer",<br>&nbsp;&nbsp;&nbsp;&nbsp;"expiresInSeconds": 3600<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 INVALID_CREDENTIALS; 429 RATE_LIMIT_EXCEEDED |
+| POST /api/v1/auth/logout | Authenticated user | Authorization: Bearer JWT | None | None | 200: {<br>&nbsp;&nbsp;"data": { "status": "LOGGED_OUT" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 429 RATE_LIMIT_EXCEEDED |
+
+### Customer management
+
+| Endpoint | Description |
+| --- | --- |
+| POST /api/v1/customers | Creates an adult customer during manager-assisted branch onboarding. |
+| GET /api/v1/customers | Lists customers for managers, including blocked and deactivated records when requested. |
+| GET /api/v1/customers/{customerId} | Retrieves one customer profile for a manager. |
+| PATCH /api/v1/customers/{customerId} | Updates the mutable details of a customer profile. |
+| PATCH /api/v1/customers/{customerId}/status | Blocks, unblocks, or permanently deactivates a customer and their accounts. |
+
+Customer endpoints are for managers. Customer response bodies omit the identity-document number; managers may receive document type, issuing country, and expiry date only.
+
+| Endpoint | Authorization | Headers | Query parameters | Request body | Successful response | Expected errors |
+| --- | --- | --- | --- | --- | --- | --- |
+| POST /api/v1/customers | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4 | None | {<br>&nbsp;&nbsp;"username": "alice",<br>&nbsp;&nbsp;"password": "DemoPass123!",<br>&nbsp;&nbsp;"firstName": "Alice",<br>&nbsp;&nbsp;"lastName": "Example",<br>&nbsp;&nbsp;"dateOfBirth": "1990-01-01",<br>&nbsp;&nbsp;"email": "alice@example.test",<br>&nbsp;&nbsp;"phoneNumber": "+381601234567",<br>&nbsp;&nbsp;"residentialAddress": { "country": "RS", "city": "Belgrade", "postalCode": "11000", "line1": "Example 1" },<br>&nbsp;&nbsp;"identityDocument": { "type": "PASSPORT", "issuingCountry": "RS", "number": "A1234567", "expiresOn": "2030-01-01" },<br>&nbsp;&nbsp;"timezone": "Europe/Belgrade"<br>} | 201: {<br>&nbsp;&nbsp;"data": { "customerId": 42, "username": "alice", "status": "ACTIVE" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 409 USERNAME_ALREADY_EXISTS, IDENTITY_DOCUMENT_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, or REQUEST_IN_PROGRESS; 422 CUSTOMER_MUST_BE_ADULT |
+| GET /api/v1/customers | Manager | Authorization: Bearer JWT | status, cursor, limit | None | 200: {<br>&nbsp;&nbsp;"data": { "items": [ { "customerId": 42, "username": "alice", "status": "ACTIVE" } ], "nextCursor": "opaque-cursor" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED |
+| GET /api/v1/customers/{customerId} | Manager | Authorization: Bearer JWT | None | None | 200: {<br>&nbsp;&nbsp;"data": { "customerId": 42, "username": "alice", "firstName": "Alice", "lastName": "Example", "dateOfBirth": "1990-01-01", "email": "alice@example.test", "phoneNumber": "+381601234567", "residentialAddress": { "country": "RS", "city": "Belgrade", "postalCode": "11000", "line1": "Example 1" }, "identityDocument": { "type": "PASSPORT", "issuingCountry": "RS", "expiresOn": "2030-01-01" }, "timezone": "Europe/Belgrade", "status": "ACTIVE" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
+| PATCH /api/v1/customers/{customerId} | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>If-Match: customer-vN | None | Partial mutable customer profile, for example:<br>{<br>&nbsp;&nbsp;"phoneNumber": "+381601234568",<br>&nbsp;&nbsp;"residentialAddress": { "country": "RS", "city": "Novi Sad", "postalCode": "21000", "line1": "Example 2" }<br>} | 200: updated customer response | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED |
+| PATCH /api/v1/customers/{customerId}/status | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>If-Match: customer-vN | None | { "status": "BLOCKED" }<br>Allowed transitions: ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED. | 200: {<br>&nbsp;&nbsp;"data": { "customerId": 42, "status": "BLOCKED" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 409 INVALID_STATUS_TRANSITION |
+
+### Account management and history
+
+| Endpoint | Description |
+| --- | --- |
+| POST /api/v1/customers/{customerId}/accounts | Creates a zero-balance EUR or USD account for a customer. |
+| GET /api/v1/customers/{customerId}/accounts | Lists accounts belonging to a manager-selected customer. |
+| GET /api/v1/accounts | Lists the authenticated customer accounts. |
+| GET /api/v1/accounts/{accountNumber} | Retrieves an account balance and current status. |
+| PATCH /api/v1/accounts/{accountNumber}/daily-limits | Sets one or both daily limits for the current customer-local day. |
+| PATCH /api/v1/accounts/{accountNumber}/status | Blocks, unblocks, or permanently deactivates an account. |
+| GET /api/v1/accounts/{accountNumber}/transactions | Returns paginated account history. |
+
+| Endpoint | Authorization | Headers | Query parameters | Request body | Successful response | Expected errors |
+| --- | --- | --- | --- | --- | --- | --- |
+| POST /api/v1/customers/{customerId}/accounts | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4 | None | { "currency": "EUR" } | 201: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "customerId": 42, "currency": "EUR", "availableBalance": "0.0000", "status": "ACTIVE" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS |
+| GET /api/v1/customers/{customerId}/accounts | Manager | Authorization: Bearer JWT | cursor, limit | None | 200: {<br>&nbsp;&nbsp;"data": { "items": [ { "accountNumber": "TB00000000000001", "currency": "EUR", "availableBalance": "0.0000", "status": "ACTIVE" } ], "nextCursor": "opaque-cursor" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
+| GET /api/v1/accounts | Customer | Authorization: Bearer JWT | cursor, limit | None | 200: customer account page using the account list response contract above | 401 UNAUTHENTICATED; 429 RATE_LIMIT_EXCEEDED |
+| GET /api/v1/accounts/{accountNumber} | Account-owning customer or an authorized manager | Authorization: Bearer JWT | None | None | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "currency": "EUR", "availableBalance": "125.5000", "status": "ACTIVE" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 429 RATE_LIMIT_EXCEEDED |
+| PATCH /api/v1/accounts/{accountNumber}/daily-limits | Account-owning customer or an authorized manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4<br>If-Match: account-vN | None | At least one limit is required:<br>{<br>&nbsp;&nbsp;"withdrawalLimit": "500.0000",<br>&nbsp;&nbsp;"transferLimit": "750.0000"<br>} | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "withdrawalLimit": "500.0000", "transferLimit": "750.0000", "expiresAt": "timestamp" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 422 DAILY_LIMIT_OUT_OF_RANGE |
+| PATCH /api/v1/accounts/{accountNumber}/status | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>If-Match: account-vN | None | { "status": "BLOCKED" }<br>Allowed transitions: ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED. | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "status": "BLOCKED" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 409 INVALID_STATUS_TRANSITION |
+| GET /api/v1/accounts/{accountNumber}/transactions | Account-owning customer or an authorized manager | Authorization: Bearer JWT | cursor, limit, from, to | None | 200: {<br>&nbsp;&nbsp;"data": { "items": [ { "transactionId": "uuid", "type": "TRANSFER", "status": "COMPLETED", "amountDelta": "-25.0000", "balanceAfter": "100.5000", "currency": "EUR", "createdAt": "timestamp" } ], "nextCursor": "opaque-cursor" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
+
+### Money operations
+
+| Endpoint | Description |
+| --- | --- |
+| POST /api/v1/accounts/{accountNumber}/deposits | Simulates an owner top-up into an active account. |
+| POST /api/v1/accounts/{accountNumber}/withdrawals | Withdraws money from an active account within the available balance and daily limit. |
+| POST /api/v1/accounts/{accountNumber}/transfers | Transfers money from an owned active account to another active account in the same currency. |
+
+All money-operation endpoints require an Idempotency-Key UUID v4 header. The key uses the idempotency scope and replay rules defined below.
+
+| Endpoint | Authorization | Headers | Query parameters | Request body | Successful response | Expected errors |
+| --- | --- | --- | --- | --- | --- | --- |
+| POST /api/v1/accounts/{accountNumber}/deposits | Account-owning customer | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4 | None | { "amount": "25.0000" } | 201: {<br>&nbsp;&nbsp;"data": { "transactionId": "uuid", "status": "COMPLETED", "accountNumber": "TB00000000000001", "amount": "25.0000", "currency": "EUR", "balanceAfter": "150.5000", "completedAt": "timestamp" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 422 ACCOUNT_NOT_ACTIVE; 429 RATE_LIMIT_EXCEEDED |
+| POST /api/v1/accounts/{accountNumber}/withdrawals | Account-owning customer | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4 | None | { "amount": "25.0000" } | 201: {<br>&nbsp;&nbsp;"data": { "transactionId": "uuid", "status": "COMPLETED", "accountNumber": "TB00000000000001", "amount": "25.0000", "currency": "EUR", "balanceAfter": "100.5000", "completedAt": "timestamp" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 422 MINIMUM_WITHDRAWAL_AMOUNT, INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, or ACCOUNT_NOT_ACTIVE; 429 RATE_LIMIT_EXCEEDED |
+| POST /api/v1/accounts/{accountNumber}/transfers | Account-owning customer | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4 | None | {<br>&nbsp;&nbsp;"destinationAccountNumber": "TB00000000000002",<br>&nbsp;&nbsp;"amount": "25.0000"<br>} | 201: {<br>&nbsp;&nbsp;"data": { "transactionId": "uuid", "status": "COMPLETED", "sourceAccountNumber": "TB00000000000001", "destinationAccountNumber": "TB00000000000002", "amount": "25.0000", "currency": "EUR", "completedAt": "timestamp" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 422 INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, ACCOUNT_NOT_ACTIVE, or CURRENCY_MISMATCH; 429 RATE_LIMIT_EXCEEDED |
+
+The source account is the accountNumber path parameter. The source account currency determines the operation currency, so money-operation requests do not include a separate currency field.
+
+### Notification extension
+
+Notifications remain an internal extension point for this demo. The core service sends a final money-operation outcome to a NotificationService port after the database transaction completes. The default adapter may be a no-op or structured-log implementation, and an adapter failure must not alter a committed money operation.
+
+There is no notification REST endpoint, inbox, persistence model, delivery channel, or delivery guarantee. Durable delivery requires a future transactional-outbox design; see docs/NOTES.md.
+
+### Update concurrency and non-money idempotency
+
+The API applies a control that matches the operation type. An idempotency replay lookup runs before a version check, so a valid retry returns its stored result even after the resource version changes. A new request with a stale ETag returns 412 PRECONDITION_FAILED.
+
+| Operation | Required request headers | Server behavior |
+| --- | --- | --- |
+| POST /customers | Idempotency-Key: UUID v4 | Uses generic request idempotency scoped to the manager and customer-creation operation. |
+| POST /customers/{customerId}/accounts | Idempotency-Key: UUID v4 | Uses generic request idempotency scoped to the manager, customer, and account-creation operation. |
+| PATCH /customers/{customerId} and /status | If-Match: customer-vN | Uses the customer version. A successful update increments the version and returns the next ETag. |
+| PATCH /accounts/{accountNumber}/daily-limits | Idempotency-Key: UUID v4 and If-Match: account-vN | Uses generic request idempotency and the account management version in one database transaction. |
+| PATCH /accounts/{accountNumber}/status | If-Match: account-vN | Uses the account management version. A successful update increments the version and returns the next ETag. |
+| Money operations | Idempotency-Key: UUID v4 | Uses the dedicated money-operation idempotency record and financial transaction locking. |
+
+GET customer and account detail responses return ETag headers based on their corresponding versions. The service calculates the customer-local effective date for a daily-limit update at its first execution and stores the replay result, so a retry after midnight does not create a new override.
 
 ### Response contract
 
@@ -244,9 +349,10 @@ An error object has the following fields: code, message, and optional fieldError
 
 | Aspect | Contract |
 | --- | --- |
-| Applies to | Required for money-operation endpoints. The login and account-retrieval endpoints do not use an idempotency key. |
+| Applies to | Required for money operations, customer creation, account creation, and daily-limit updates. Other current endpoints rely on their idempotent desired-state semantics or ETag preconditions. |
 | Header format | Idempotency-Key is a client-generated UUID v4. |
-| Scope | A key is scoped to customer, source account or deposit target account, and operation type. The same key may be used in a different scope. |
+| Money-operation scope | Customer, source account or deposit target account, and operation type. |
+| Generic-request scope | Authenticated actor, API operation, resource scope, and idempotency key. |
 | Replay | A repeat request with the same scope and normalized request body returns the stored final HTTP status and response body. |
 | Conflict | A repeat key in the same scope with a different request body returns 409 IDEMPOTENCY_CONFLICT. |
 | Concurrent request | While the first request is in progress, a matching repeat request returns 409 REQUEST_IN_PROGRESS. |
@@ -262,6 +368,7 @@ Internal codes use the form TAR-AREA-NNN. Structured logs for an error include i
 | --- | --- | --- | --- |
 | TAR-API-001 | VALIDATION_ERROR | 400 | Request binding or validation failed. |
 | TAR-AUTH-001 | INVALID_CREDENTIALS | 401 | Login credentials were rejected. |
+| TAR-CUSTOMER-001 | CUSTOMER_MUST_BE_ADULT | 422 | Customer creation was rejected because the customer is underage. |
 | TAR-TRANSFER-001 | INSUFFICIENT_FUNDS | 422 | Transfer cannot be completed because funds are insufficient. |
 | TAR-IDEMPOTENCY-001 | IDEMPOTENCY_CONFLICT | 409 | Idempotency key was reused with different input. |
 | TAR-INFRA-001 | INTERNAL_ERROR | 500 | Unexpected application, database, or dependency failure. |
@@ -272,7 +379,9 @@ Internal codes use the form TAR-AREA-NNN. Structured logs for an error include i
 | 401 | UNAUTHENTICATED or INVALID_CREDENTIALS | JWT is missing or invalid, or login credentials are invalid. |
 | 403 | ACCESS_DENIED | Authenticated user does not own or may not manage the requested resource. |
 | 404 | RESOURCE_NOT_FOUND | Requested resource does not exist or is not visible to the caller. |
-| 409 | IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS | Idempotency key is reused with different input, or matching request is still being processed. |
-| 422 | INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, ACCOUNT_NOT_ACTIVE, or CURRENCY_MISMATCH | Request is valid but cannot be completed under banking rules. |
+| 409 | USERNAME_ALREADY_EXISTS, IDENTITY_DOCUMENT_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, REQUEST_IN_PROGRESS, or INVALID_STATUS_TRANSITION | A unique value conflicts, a duplicate request conflicts, a matching request is in progress, or a lifecycle transition is invalid. |
+| 412 | PRECONDITION_FAILED | The supplied ETag is stale. |
+| 428 | PRECONDITION_REQUIRED | An ETag is required for this update. |
+| 422 | CUSTOMER_MUST_BE_ADULT, MINIMUM_WITHDRAWAL_AMOUNT, INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, DAILY_LIMIT_OUT_OF_RANGE, ACCOUNT_NOT_ACTIVE, or CURRENCY_MISMATCH | Request is valid but cannot be completed under banking rules. |
 | 429 | RATE_LIMIT_EXCEEDED | Rate limit has been exceeded; response includes Retry-After. |
 | 500 | INTERNAL_ERROR | Unexpected failure; response contains no internal detail. |
