@@ -22,7 +22,7 @@ This test assesses problem-solving skills through a system that reflects real-wo
 ### Authentication
 
 - Use JWT authentication as the basic security mechanism.
-- Authenticate with a unique username and password; passwords must be salted and hashed.
+- Authenticate with a unique ASCII username and password. A manager assigns the username of each customer when creating the customer; passwords must be salted and hashed.
 - JWT expiry must be configurable and default to one hour.
 - Passwords and tokens must not be logged or stored in plain text.
 - Seed one or more manager accounts at startup. Manager creation is out of scope for the REST API. Startup seeding must be idempotent and use configured credentials; passwords must be stored only as hashes.
@@ -32,7 +32,10 @@ This test assesses problem-solving skills through a system that reflects real-wo
 
 A manager manages the customer record throughout its lifecycle.
 
-- Create a customer.
+- Create a customer. Collect the date of birth; identity-document type, issuing country, and number; phone number; and residential address. The normalized document must be unique for its type and issuing country.
+- Serve customers aged 18 or older only. Underage customers, including accounts managed by parents or guardians, are out of scope.
+- Collect a phone number in E.164 format. It does not need to be unique because it may be shared by a household.
+- Collect the identity-document expiry date when the document has one. A document with an expiry date must be valid when the customer is created.
 - Retrieve an existing customer.
 - Update an existing customer.
 - Block a customer and their accounts; this can be restored.
@@ -121,7 +124,9 @@ The daily amount that can be withdrawn or transferred from an account must be co
 - Enforce server-side authentication, role checks, and customer ownership for every protected endpoint.
 - Validate request inputs and reject malformed, invalid, or unauthorized requests without changing state.
 - Store configuration secrets, including JWT signing keys and database credentials, outside source code and never expose them in API responses or logs.
-- Rate-limit failed authentication attempts to reduce brute-force attacks.
+- Encrypt sensitive customer data at rest. Identity-document fields require application-level authenticated encryption; encryption keys must be supplied through deployment configuration and excluded from source code, API responses, and logs.
+- Rate-limit API traffic to protect the service from basic abuse. Apply strict limits to authentication attempts by IP address and username, and apply limits to authenticated requests by user; apply stricter limits to money operations.
+- Return HTTP 429 (Too Many Requests) and a Retry-After header when a request is limited.
 
 ## Performance requirements
 
@@ -136,7 +141,7 @@ The daily amount that can be withdrawn or transferred from an account must be co
 - Hibernate with QueryDSL (latest compatible version)
 - Swagger OpenAPI (latest compatible version)
 - PostgreSQL: mandatory primary database
-- Redis: mandatory for storing and invalidating JWT tokens
+- Redis: mandatory for storing and invalidating JWT tokens and distributed rate-limit state
 - JUnit (latest compatible version)
 - Testcontainers for setting up a test PostgreSQL instance
 - Log4j for logging
