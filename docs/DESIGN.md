@@ -113,6 +113,8 @@ A normalized document number is additionally protected with an HMAC-SHA-256 look
 | updated_at | timestamptz | not null | Last update |
 | deactivated_at | timestamptz | nullable | Deactivation time |
 
+Customer status cascades are deliberately conservative. Blocking a customer blocks every non-deactivated account. Unblocking a customer restores no accounts automatically; a manager must explicitly unblock each eligible account. Deactivating a customer permanently deactivates every non-deactivated account.
+
 ### Transactions
 
 One transaction represents a requested deposit, withdrawal, or transfer. Transaction entries provide the account history.
@@ -265,7 +267,7 @@ All endpoints accept the optional X-Correlation-Id UUID header. Protected endpoi
 | GET /api/v1/customers | Lists customers for managers, including blocked and deactivated records when requested. |
 | GET /api/v1/customers/{customerId} | Retrieves one customer profile for a manager. |
 | PATCH /api/v1/customers/{customerId} | Updates the mutable details of a customer profile. |
-| PATCH /api/v1/customers/{customerId}/status | Blocks, unblocks, or permanently deactivates a customer and their accounts. |
+| PATCH /api/v1/customers/{customerId}/status | Blocks, unblocks, or permanently deactivates a customer. Blocking and deactivation cascade to accounts; unblocking does not. |
 
 Customer endpoints are for managers. Customer response bodies omit the identity-document number; managers may receive document type, issuing country, and expiry date only.
 
@@ -284,7 +286,7 @@ Customer endpoints are for managers. Customer response bodies omit the identity-
 | POST /api/v1/customers/{customerId}/accounts | Creates a zero-balance EUR or USD account for a customer. |
 | GET /api/v1/customers/{customerId}/accounts | Lists accounts belonging to a manager-selected customer. |
 | GET /api/v1/accounts | Lists the authenticated customer accounts. |
-| GET /api/v1/accounts/{accountNumber} | Retrieves an account balance and current status. |
+| GET /api/v1/accounts/{accountNumber} | Retrieves an account balance, current status, and effective daily limits. |
 | PATCH /api/v1/accounts/{accountNumber}/daily-limits | Sets one or both daily limits for the current customer-local day. |
 | PATCH /api/v1/accounts/{accountNumber}/status | Blocks, unblocks, or permanently deactivates an account. |
 | GET /api/v1/accounts/{accountNumber}/transactions | Returns paginated account history. |
@@ -298,6 +300,24 @@ Customer endpoints are for managers. Customer response bodies omit the identity-
 | PATCH /api/v1/accounts/{accountNumber}/daily-limits | Account-owning customer or an authorized manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4<br>If-Match: account-vN | None | At least one limit is required:<br>{<br>&nbsp;&nbsp;"withdrawalLimit": "500.0000",<br>&nbsp;&nbsp;"transferLimit": "750.0000"<br>} | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "withdrawalLimit": "500.0000", "transferLimit": "750.0000", "expiresAt": "timestamp" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 422 DAILY_LIMIT_OUT_OF_RANGE |
 | PATCH /api/v1/accounts/{accountNumber}/status | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>If-Match: account-vN | None | { "status": "BLOCKED" }<br>Allowed transitions: ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED. | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "status": "BLOCKED" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 409 INVALID_STATUS_TRANSITION |
 | GET /api/v1/accounts/{accountNumber}/transactions | Account-owning customer or an authorized manager | Authorization: Bearer JWT | cursor, limit, from, to | None | 200: {<br>&nbsp;&nbsp;"data": { "items": [ { "transactionId": "uuid", "type": "TRANSFER", "status": "COMPLETED", "amountDelta": "-25.0000", "balanceAfter": "100.5000", "currency": "EUR", "createdAt": "timestamp" } ], "nextCursor": "opaque-cursor" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
+
+The account-detail response includes the effective withdrawal and transfer limits for the customer-local day. It returns a temporary override when present; otherwise it returns the configured default and sets expiresAt to null.
+
+```json
+{
+  "dailyLimits": {
+    "withdrawal": {
+      "amount": "500.0000",
+      "expiresAt": "2026-09-25T22:00:00Z"
+    },
+    "transfer": {
+      "amount": "750.0000",
+      "expiresAt": null
+    }
+  }
+}
+```
+
 
 ### Money operations
 
