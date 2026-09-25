@@ -210,3 +210,55 @@ This durable aggregate is updated in the same database transaction as the money 
 | used_amount | numeric(19,4) | not null; default 0; greater than or equal to 0 | Amount used on this date |
 | updated_at | timestamptz | not null | Last update |
 | (account_id, operation_type, usage_date) | - | unique | One daily aggregate per account, operation type, and day |
+
+## REST API
+
+This initial API slice covers authentication and the essential customer banking flow. All endpoints use JSON and are versioned under /api/v1. The server generates a correlation identifier for each request; it returns that value in the X-Correlation-Id response header and in every response body.
+
+### Initial endpoints
+
+| Endpoint | Authorization | Contract | JSON or outcome |
+| --- | --- | --- | --- |
+| POST /api/v1/auth/login | None | Request JSON | {<br>&nbsp;&nbsp;"username": "alice",<br>&nbsp;&nbsp;"password": "password"<br>} |
+|  |  | 200 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"accessToken": "jwt",<br>&nbsp;&nbsp;&nbsp;&nbsp;"tokenType": "Bearer",<br>&nbsp;&nbsp;&nbsp;&nbsp;"expiresInSeconds": 3600<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
+|  |  | Errors | 400 VALIDATION_ERROR; 401 INVALID_CREDENTIALS; 429 RATE_LIMIT_EXCEEDED |
+| GET /api/v1/accounts/{accountNumber} | Account-owning customer or an authorized manager | Request JSON | No request body |
+|  |  | 200 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"accountNumber": "TB00000000000001",<br>&nbsp;&nbsp;&nbsp;&nbsp;"currency": "EUR",<br>&nbsp;&nbsp;&nbsp;&nbsp;"availableBalance": "125.5000",<br>&nbsp;&nbsp;&nbsp;&nbsp;"status": "ACTIVE"<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
+|  |  | Errors | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 429 RATE_LIMIT_EXCEEDED |
+| POST /api/v1/accounts/{accountNumber}/transfers | Account-owning customer | Request | Header: Idempotency-Key: opaque-client-key<br>Body:<br>{<br>&nbsp;&nbsp;"destinationAccountNumber": "TB00000000000002",<br>&nbsp;&nbsp;"amount": "25.0000"<br>} |
+|  |  | 201 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"transactionId": "uuid",<br>&nbsp;&nbsp;&nbsp;&nbsp;"status": "COMPLETED",<br>&nbsp;&nbsp;&nbsp;&nbsp;"sourceAccountNumber": "TB00000000000001",<br>&nbsp;&nbsp;&nbsp;&nbsp;"destinationAccountNumber": "TB00000000000002",<br>&nbsp;&nbsp;&nbsp;&nbsp;"amount": "25.0000",<br>&nbsp;&nbsp;&nbsp;&nbsp;"currency": "EUR",<br>&nbsp;&nbsp;&nbsp;&nbsp;"completedAt": "timestamp"<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
+|  |  | Errors | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 422 INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, ACCOUNT_NOT_ACTIVE, or CURRENCY_MISMATCH; 429 RATE_LIMIT_EXCEEDED |
+
+The transfer source account is the accountNumber path parameter. Its currency determines the transfer currency, so the request does not provide a separate currency field.
+
+### Response contract
+
+| Response type | HTTP status | Body shape |
+| --- | --- | --- |
+| Success | Any 2xx status | {<br>&nbsp;&nbsp;"data": {},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
+| Error | Any 4xx or 5xx status | {<br>&nbsp;&nbsp;"error": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"code": "STABLE_CODE",<br>&nbsp;&nbsp;&nbsp;&nbsp;"message": "Safe message",<br>&nbsp;&nbsp;&nbsp;&nbsp;"fieldErrors": [ { "field": "amount", "code": "POSITIVE_REQUIRED", "message": "Must be positive" } ]<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
+
+An error object has the following fields: code, message, and optional fieldErrors. Each fieldErrors item contains field, code, and message. Error messages must be safe for clients and must not reveal credentials, tokens, internal implementation details, or whether an unknown username exists.
+
+### Idempotency keys
+
+| Aspect | Contract |
+| --- | --- |
+| Applies to | Required for money-operation endpoints. The login and account-retrieval endpoints do not use an idempotency key. |
+| Header format | Idempotency-Key is a client-generated opaque string up to 255 characters. |
+| Scope | A key is scoped to customer, source account or deposit target account, and operation type. The same key may be used in a different scope. |
+| Replay | A repeat request with the same scope and normalized request body returns the stored final HTTP status and response body. |
+| Conflict | A repeat key in the same scope with a different request body returns 409 IDEMPOTENCY_CONFLICT. |
+| Concurrent request | While the first request is in progress, a matching repeat request returns 409 REQUEST_IN_PROGRESS. |
+| Retention | Records expire after the configurable idempotency retention period. |
+
+| Status | Error code | Meaning |
+| --- | --- | --- |
+| 400 | VALIDATION_ERROR | Request data is malformed or violates an input constraint. |
+| 401 | UNAUTHENTICATED or INVALID_CREDENTIALS | JWT is missing or invalid, or login credentials are invalid. |
+| 403 | ACCESS_DENIED | Authenticated user does not own or may not manage the requested resource. |
+| 404 | RESOURCE_NOT_FOUND | Requested resource does not exist or is not visible to the caller. |
+| 409 | IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS | Idempotency key is reused with different input, or matching request is still being processed. |
+| 422 | INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, ACCOUNT_NOT_ACTIVE, or CURRENCY_MISMATCH | Request is valid but cannot be completed under banking rules. |
+| 429 | RATE_LIMIT_EXCEEDED | Rate limit has been exceeded; response includes Retry-After. |
+| 500 | INTERNAL_ERROR | Unexpected failure; response contains no internal detail. |
