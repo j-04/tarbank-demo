@@ -175,7 +175,7 @@ A transfer has two entries: a negative source entry and a positive destination e
 
 ### API request idempotency records
 
-This generic record supports non-money requests that can create resources or have a retry-sensitive side effect. Money operations continue to use the dedicated idempotency records above.
+This generic record supports non-money requests that can create resources or have a retry-sensitive side effect. Money operations continue to use the dedicated idempotency records above. A new record starts as IN_PROGRESS. A matching request while it remains IN_PROGRESS returns 409 REQUEST_IN_PROGRESS; a completed record replays its stored final response. Expired records are removed by cleanup, so an abandoned reservation cannot block a key indefinitely.
 
 | Field | Type | Constraints | Description |
 | --- | --- | --- | --- |
@@ -185,10 +185,12 @@ This generic record supports non-money requests that can create resources or hav
 | resource_scope | varchar(255) | not null | Scope affected by the operation, such as customers or account number |
 | idempotency_key | uuid | not null; UUID v4 | Client-generated request key |
 | request_hash | varchar(64) | not null | Normalized request hash used to reject changed retries |
+| status | varchar(20) | not null; IN_PROGRESS or COMPLETED | Request-processing state |
 | response_status | integer | nullable | HTTP response status retained for replay |
 | response_body | jsonb | nullable | HTTP response body retained for replay |
 | expires_at | timestamptz | not null | Configurable retention deadline |
 | created_at | timestamptz | not null | Creation time |
+| updated_at | timestamptz | not null | Last state change |
 | (actor_user_id, operation, resource_scope, idempotency_key) | - | unique | Generic idempotency scope |
 
 ### Audit events
