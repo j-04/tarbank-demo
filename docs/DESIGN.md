@@ -38,7 +38,7 @@ The shared users table stores authentication credentials and lifecycle data. One
 
 The users.role value determines access control. The service validates that every user has exactly one matching profile, because a normal relational constraint cannot enforce that rule across these tables.
 
-Customer usernames are manager-assigned, unique ASCII login identifiers. A separate foreigner flag is not needed: the identity-document issuing country captures the relevant distinction, without changing the username policy.
+Customer usernames are manager-assigned, unique lowercase ASCII login identifiers. They contain 3 to 32 characters, start with a letter, and otherwise use only letters, digits, periods, underscores, or hyphens. A separate foreigner flag is not needed: the identity-document issuing country captures the relevant distinction, without changing the username policy.
 
 Each customer record stores one current residential address. Address history is out of scope.
 
@@ -54,8 +54,8 @@ A normalized document number is additionally protected with an HMAC-SHA-256 look
 | --- | --- | --- | --- |
 | id | bigserial | primary key | Internal identifier |
 | role | varchar(20) | not null; `MANAGER` or `CUSTOMER` | Access role |
-| username | varchar(100) | not null; unique; ASCII letters, digits, period, underscore, or hyphen | Login name; manager-assigned for customers |
-| password_hash | varchar(255) | not null | Salted password hash |
+| username | varchar(32) | not null; unique; lowercase 3 to 32 character username format | Login name; manager-assigned for customers |
+| password_hash | varchar(255) | not null; BCrypt hash | Salted one-way password hash |
 | first_name | varchar(100) | not null | First name |
 | middle_name | varchar(100) | nullable | Middle name |
 | last_name | varchar(100) | not null | Last name |
@@ -156,7 +156,7 @@ A transfer has two entries: a negative source entry and a positive destination e
 | customer_id | bigint | not null; FK customers.user_id | Customer who made the request |
 | account_id | bigint | not null; FK `accounts.id` | Source account, or deposit target |
 | operation_type | varchar(20) | not null; `DEPOSIT`, `WITHDRAWAL`, or `TRANSFER` | Requested operation |
-| idempotency_key | varchar(255) | not null | Client-supplied request key |
+| idempotency_key | uuid | not null; UUID v4 | Client-generated request key |
 | request_hash | varchar(64) | not null | Hash used to reject a key reused with different input |
 | status | varchar(20) | not null; `IN_PROGRESS`, `COMPLETED`, or `FAILED` | Request-processing state |
 | transaction_id | uuid | nullable; FK `transactions.id` | Resulting transaction |
@@ -219,13 +219,13 @@ This initial API slice covers authentication and the essential customer banking 
 
 | Endpoint | Authorization | Contract | JSON or outcome |
 | --- | --- | --- | --- |
-| POST /api/v1/auth/login | None | Request JSON | {<br>&nbsp;&nbsp;"username": "alice",<br>&nbsp;&nbsp;"password": "password"<br>} |
+| POST /api/v1/auth/login | None | Request JSON | {<br>&nbsp;&nbsp;"username": "alice",<br>&nbsp;&nbsp;"password": "DemoPass123!"<br>} |
 |  |  | 200 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"accessToken": "jwt",<br>&nbsp;&nbsp;&nbsp;&nbsp;"tokenType": "Bearer",<br>&nbsp;&nbsp;&nbsp;&nbsp;"expiresInSeconds": 3600<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
 |  |  | Errors | 400 VALIDATION_ERROR; 401 INVALID_CREDENTIALS; 429 RATE_LIMIT_EXCEEDED |
 | GET /api/v1/accounts/{accountNumber} | Account-owning customer or an authorized manager | Request JSON | No request body |
 |  |  | 200 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"accountNumber": "TB00000000000001",<br>&nbsp;&nbsp;&nbsp;&nbsp;"currency": "EUR",<br>&nbsp;&nbsp;&nbsp;&nbsp;"availableBalance": "125.5000",<br>&nbsp;&nbsp;&nbsp;&nbsp;"status": "ACTIVE"<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
 |  |  | Errors | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 429 RATE_LIMIT_EXCEEDED |
-| POST /api/v1/accounts/{accountNumber}/transfers | Account-owning customer | Request | Header: Idempotency-Key: opaque-client-key<br>Body:<br>{<br>&nbsp;&nbsp;"destinationAccountNumber": "TB00000000000002",<br>&nbsp;&nbsp;"amount": "25.0000"<br>} |
+| POST /api/v1/accounts/{accountNumber}/transfers | Account-owning customer | Request | Header: Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000<br>Body:<br>{<br>&nbsp;&nbsp;"destinationAccountNumber": "TB00000000000002",<br>&nbsp;&nbsp;"amount": "25.0000"<br>} |
 |  |  | 201 response JSON | {<br>&nbsp;&nbsp;"data": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"transactionId": "uuid",<br>&nbsp;&nbsp;&nbsp;&nbsp;"status": "COMPLETED",<br>&nbsp;&nbsp;&nbsp;&nbsp;"sourceAccountNumber": "TB00000000000001",<br>&nbsp;&nbsp;&nbsp;&nbsp;"destinationAccountNumber": "TB00000000000002",<br>&nbsp;&nbsp;&nbsp;&nbsp;"amount": "25.0000",<br>&nbsp;&nbsp;&nbsp;&nbsp;"currency": "EUR",<br>&nbsp;&nbsp;&nbsp;&nbsp;"completedAt": "timestamp"<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
 |  |  | Errors | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 422 INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, ACCOUNT_NOT_ACTIVE, or CURRENCY_MISMATCH; 429 RATE_LIMIT_EXCEEDED |
 
@@ -245,12 +245,26 @@ An error object has the following fields: code, message, and optional fieldError
 | Aspect | Contract |
 | --- | --- |
 | Applies to | Required for money-operation endpoints. The login and account-retrieval endpoints do not use an idempotency key. |
-| Header format | Idempotency-Key is a client-generated opaque string up to 255 characters. |
+| Header format | Idempotency-Key is a client-generated UUID v4. |
 | Scope | A key is scoped to customer, source account or deposit target account, and operation type. The same key may be used in a different scope. |
 | Replay | A repeat request with the same scope and normalized request body returns the stored final HTTP status and response body. |
 | Conflict | A repeat key in the same scope with a different request body returns 409 IDEMPOTENCY_CONFLICT. |
 | Concurrent request | While the first request is in progress, a matching repeat request returns 409 REQUEST_IN_PROGRESS. |
 | Retention | Records expire after the configurable idempotency retention period. |
+
+### Internal service codes
+
+Public API error codes are stable and safe for clients. Internal service codes classify the underlying event for logs and support; they are not returned to clients. A client receives the public error code and correlationId only.
+
+Internal codes use the form TAR-AREA-NNN. Structured logs for an error include internalCode, publicErrorCode, HTTP status, and correlationId, but no credentials, tokens, or sensitive customer data.
+
+| Internal code | Public error code | HTTP status | Meaning |
+| --- | --- | --- | --- |
+| TAR-API-001 | VALIDATION_ERROR | 400 | Request binding or validation failed. |
+| TAR-AUTH-001 | INVALID_CREDENTIALS | 401 | Login credentials were rejected. |
+| TAR-TRANSFER-001 | INSUFFICIENT_FUNDS | 422 | Transfer cannot be completed because funds are insufficient. |
+| TAR-IDEMPOTENCY-001 | IDEMPOTENCY_CONFLICT | 409 | Idempotency key was reused with different input. |
+| TAR-INFRA-001 | INTERNAL_ERROR | 500 | Unexpected application, database, or dependency failure. |
 
 | Status | Error code | Meaning |
 | --- | --- | --- |

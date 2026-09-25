@@ -22,7 +22,9 @@ This test assesses problem-solving skills through a system that reflects real-wo
 ### Authentication
 
 - Use JWT authentication as the basic security mechanism.
-- Authenticate with a unique ASCII username and password. A manager assigns the username of each customer when creating the customer; passwords must be salted and hashed.
+- Authenticate with a unique username and password. A manager assigns the username of each customer when creating the customer.
+- A username must contain 3 to 32 lowercase ASCII characters, start with a letter, and then use only letters, digits, periods, underscores, or hyphens. Store and compare usernames in lowercase.
+- For this demo, a password must contain exactly 12 printable characters and must not equal the username. Passwords must be salted and hashed.
 - JWT expiry must be configurable and default to one hour.
 - Passwords and tokens must not be logged or stored in plain text.
 - Seed one or more manager accounts at startup. Manager creation is out of scope for the REST API. Startup seeding must be idempotent and use configured credentials; passwords must be stored only as hashes.
@@ -89,8 +91,8 @@ The daily amount that can be withdrawn or transferred from an account must be co
 
 - Transactions must be atomic. Concurrent transfers and withdrawals must not allow an account balance to go below zero.
 - Protect accounts from concurrent modifications through a high level of transaction isolation.
-- Support idempotency to prevent accidental duplicate operations. A client sends an idempotency key for each money-moving operation, and the same key returns the original outcome.
-- Scope idempotency keys by customer, source account, and operation type to prevent collisions.
+- Support idempotency to prevent accidental duplicate operations. The client generates a UUID v4 idempotency key for each money-moving operation and must reuse the exact key for a retry; the same key returns the original outcome.
+- Scope idempotency keys by customer, source account or deposit target account, and operation type to prevent collisions.
 
 ### Demo failure simulation
 
