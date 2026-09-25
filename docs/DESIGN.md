@@ -1,158 +1,212 @@
-# Design doc
+# Design document
 
 ## Project design
 
-Project will be implemented using DDD approach to separate loosely coupled parts of the service in their own spaces.
-There will be domain areas such as `security` under `com.tarbank.security` and `core` under `com.tarbank.core`.
+The service is a modular monolith. Domain-driven design principles establish clear boundaries between domain areas; they do not imply a future microservice split.
 
-DDD will help establish clean boundaries of domain areas.
+Code is organized by domain area:
 
-Every domain area will contain their leayers of logic.
-1. Tarbank Core:
-    - `controller` layer; REST APIs functionality of the service
-    - `api validation` layer; an implementetion of validation of incoming data
-    - `service` layer; infrastructural and business logic of the service
-    - `transaction validation` layer; goes alongside with `service` layer; provides logic that validates transaction data before executing it
-    - `repository` layer; integrates with PostgreSQL using QuieryDSL with Hibernate as ORM core.
+1. Tarbank Core
+   - `controller` layer: REST API endpoints
+   - `api validation` layer: validation of incoming data
+   - `application service` layer: business operations and transaction orchestration
+   - `transaction validation` layer: domain rules checked before a money operation
+   - `repository` layer: PostgreSQL persistence through JPA/Hibernate; QueryDSL supports complex queries
 
-2. Security:
-    - `controller` layer; REST APIs functionality of the service
-    - `api validation` layer; an implementetion of validation of incoming data
-    - `service` layer; infrastructural and business logic of the service
-    - `repository` layer; integrates with Redis cache and PostgreSQL using QuieryDSL with Hibernate as ORM core.
+2. Security
+   - `controller` layer: authentication and authorization endpoints
+   - `api validation` layer: validation of authentication input
+   - `service` layer: authentication, authorization, JWT handling, and rate limiting
+   - `repository` layer: PostgreSQL persists users and credentials; Redis stores JWT invalidation and rate-limit data
+
+## API rate limiting
+
+Rate limiting is enforced at the application boundary before a request reaches business logic. It complements, rather than replaces, upstream protection such as a reverse proxy, API gateway, or WAF.
+
+The service uses a Redis-backed token-bucket limiter. Each check atomically refills and consumes tokens, so limits are shared correctly if multiple service instances are introduced. Limit values and token-bucket settings are configuration, not hard-coded business rules.
+
+- A coarse anonymous limit is keyed by client IP address.
+- Authentication attempts are limited by both client IP address and username. The IP limit protects password-hash processing; the username limit reduces targeted credential attacks.
+- Authenticated requests are limited by user identity. Money-operation endpoints are additionally limited by source-account identity.
+- A limited request returns HTTP 429 (Too Many Requests) with a Retry-After header and must not invoke business logic.
+
+Circuit breakers are not used for inbound rate limiting. They remain an option for calls to a failing external dependency.
 
 ## Entity design
 
-A single `users` table holds both roles. Separate manager and customer credential tables would duplicate authentication data.
+The shared users table stores authentication credentials and lifecycle data. One-to-one manager and customer profile tables hold role-specific data. Foreign keys can therefore target the correct profile type instead of a generic user.
+
+The users.role value determines access control. The service validates that every user has exactly one matching profile, because a normal relational constraint cannot enforce that rule across these tables.
+
+Customer usernames are manager-assigned, unique ASCII login identifiers. A separate foreigner flag is not needed: the identity-document issuing country captures the relevant distinction, without changing the username policy.
+
+Each customer record stores one current residential address. Address history is out of scope.
+
+### Sensitive-data protection
+
+Storage encryption at rest protects customer data in deployment. Identity-document numbers receive additional application-level authenticated encryption. The application stores a versioned ciphertext and obtains encryption keys from deployment configuration; production deployments should supply those keys through managed secrets or key-management infrastructure.
+
+A normalized document number is additionally protected with an HMAC-SHA-256 lookup hash. The unique constraint uses this hash rather than the ciphertext, which is intentionally non-deterministic. Document numbers and their lookup hashes must not be exposed through normal API responses or logs.
 
 ### Users
 
 | Field | Type | Constraints | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | id | bigserial | primary key | Internal identifier |
 | role | varchar(20) | not null; `MANAGER` or `CUSTOMER` | Access role |
-| username | varchar(100) | not null; unique | Login name |
+| username | varchar(100) | not null; unique; ASCII letters, digits, period, underscore, or hyphen | Login name; manager-assigned for customers |
 | password_hash | varchar(255) | not null | Salted password hash |
 | first_name | varchar(100) | not null | First name |
 | middle_name | varchar(100) | nullable | Middle name |
 | last_name | varchar(100) | not null | Last name |
-| email | varchar(320) | nullable | Contact email |
-| timezone | varchar(64) | required for customers | IANA timezone for daily limits |
-| manager_id | bigint | nullable; FK `users.id`; manager only | Manager responsible for a customer |
-| status | varchar(20) | not null; `ACTIVE`, `BLOCKED`, `DEACTIVATED` | Lifecycle state |
+| status | varchar(20) | not null; `ACTIVE`, `BLOCKED`, or `DEACTIVATED` | Lifecycle state |
 | created_at | timestamptz | not null | Creation time |
 | updated_at | timestamptz | not null | Last update |
 | deactivated_at | timestamptz | nullable | Deactivation time |
 
+### Managers
+
+| Field | Type | Constraints | Description |
+| --- | --- | --- | --- |
+| user_id | bigint | primary key; FK users.id; users.role must be `MANAGER`; validated by service | Manager profile |
+
+### Customers
+
+| Field | Type | Constraints | Description |
+| --- | --- | --- | --- |
+| user_id | bigint | primary key; FK users.id; users.role must be `CUSTOMER`; validated by service | Customer profile |
+| date_of_birth | date | not null; customer must be at least 18 when created; validated by service | Date of birth |
+| email | varchar(320) | nullable | Contact email |
+| phone_number | varchar(16) | not null; normalized E.164 format; not unique | Contact phone number |
+| residence_country | char(2) | not null; ISO 3166-1 alpha-2 | Country of residence |
+| residence_city | varchar(100) | not null | City of residence |
+| residence_postal_code | varchar(20) | not null | Postal code |
+| residence_address_line_1 | varchar(255) | not null | Street address and number |
+| residence_address_line_2 | varchar(255) | nullable | Additional address information |
+| document_type | varchar(30) | not null | Type of identity document |
+| document_issuing_country | char(2) | not null; ISO 3166-1 alpha-2 | Country that issued the identity document |
+| document_number_encrypted | bytea | not null; application-level authenticated encryption | Versioned encrypted identity-document number |
+| document_number_hash | char(64) | not null; HMAC-SHA-256 lookup hash | Used to detect duplicate identity documents |
+| document_expires_on | date | nullable; if present, must be valid at customer creation; validated by service | Identity-document expiry date |
+| timezone | varchar(64) | not null; immutable after customer creation | IANA timezone used for daily limits |
+| manager_id | bigint | nullable; FK managers.user_id | Manager responsible for the customer |
+| (document_type, document_issuing_country, document_number_hash) | - | unique | Prevent duplicate customer identity documents |
+
 ### Accounts
 
 | Field | Type | Constraints | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | id | bigserial | primary key | Internal identifier |
-| account_number | varchar(16) | not null; unique; immutable; `TB` plus 14 digits | Public demo account number; final digit may use Luhn validation |
-| customer_id | bigint | not null; FK `users.id`; customer only | Owner |
+| account_number | varchar(16) | not null; unique; immutable; `TB` plus 14 digits | Public demo account number |
+| customer_id | bigint | not null; FK customers.user_id | Account owner |
 | currency | char(3) | not null; `EUR` or `USD`; immutable | Account currency |
-| balance | numeric(19,4) | not null; default 0; check `balance >= 0` | Current balance projection |
-| status | varchar(20) | not null; `ACTIVE`, `BLOCKED`, `DEACTIVATED` | Lifecycle state |
-| created_by_manager_id | bigint | not null; FK `users.id`; manager only | Creating manager |
+| balance | numeric(19,4) | not null; default 0; greater than or equal to 0 | Current available balance |
+| status | varchar(20) | not null; `ACTIVE`, `BLOCKED`, or `DEACTIVATED` | Account lifecycle state |
+| created_by_manager_id | bigint | not null; FK managers.user_id | Manager who created the account |
 | created_at | timestamptz | not null | Creation time |
 | updated_at | timestamptz | not null | Last update |
 | deactivated_at | timestamptz | nullable | Deactivation time |
 
 ### Transactions
 
-One transaction represents one requested deposit, withdrawal, or transfer. Its account history is represented by transaction entries.
+One transaction represents a requested deposit, withdrawal, or transfer. Transaction entries provide the account history.
 
 | Field | Type | Constraints | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | id | uuid | primary key | Public transaction identifier |
-| type | varchar(20) | not null; `DEPOSIT`, `WITHDRAWAL`, `TRANSFER` | Operation type |
-| status | varchar(20) | not null; `PENDING`, `COMPLETED`, `FAILED` | Outcome |
-| amount | numeric(19,4) | not null; check `amount > 0` | Requested amount |
-| currency | char(3) | not null; `EUR` or `USD` | Transaction currency |
-| initiated_by_user_id | bigint | not null; FK `users.id` | Initiating customer |
-| source_account_id | bigint | nullable; FK `accounts.id`; required for withdrawal/transfer | Debited account |
-| destination_account_id | bigint | nullable; FK `accounts.id`; required for deposit/transfer | Credited account |
-| failure_code | varchar(100) | nullable | Safe machine-readable failure reason |
-| correlation_id | uuid | not null | Request correlation identifier |
+| type | varchar(20) | not null; `DEPOSIT`, `WITHDRAWAL`, or `TRANSFER` | Money-operation type |
+| status | varchar(20) | not null; `COMPLETED` or `FAILED` | Final result of the synchronous operation |
+| amount | numeric(19,4) | not null; greater than 0 | Operation amount |
+| currency | char(3) | not null; `EUR` or `USD` | Operation currency |
+| initiated_by_customer_id | bigint | not null; FK customers.user_id | Customer who initiated the operation |
+| source_account_id | bigint | nullable; required for withdrawal and transfer; FK `accounts.id` | Debited account |
+| destination_account_id | bigint | nullable; required for deposit and transfer; FK `accounts.id` | Credited account |
+| failure_code | varchar(100) | nullable | Stable failure reason for a failed transaction |
+| correlation_id | uuid | not null | Identifier used to correlate logs, audit events, and API responses |
 | created_at | timestamptz | not null | Creation time |
-| completed_at | timestamptz | nullable | Completion time |
+| completed_at | timestamptz | nullable | Completion or failure time |
 
 ### Transaction entries
 
-A transfer has two entries under one transaction: a negative source entry and a positive destination entry.
+A transfer has two entries: a negative source entry and a positive destination entry. A deposit or withdrawal has one entry.
 
 | Field | Type | Constraints | Description |
-|---|---|---|---|
-| id | bigserial | primary key | Entry identifier |
+| --- | --- | --- | --- |
+| id | bigserial | primary key | Internal identifier |
 | transaction_id | uuid | not null; FK `transactions.id` | Parent transaction |
-| account_id | bigint | not null; FK `accounts.id` | Account history owner |
-| amount_delta | numeric(19,4) | not null; check `amount_delta <> 0` | Signed movement |
-| balance_after | numeric(19,4) | not null; check `balance_after >= 0` | Resulting balance |
-| created_at | timestamptz | not null | Entry time |
-|  |  | unique `(transaction_id, account_id)` | Prevent duplicate account entries |
+| account_id | bigint | not null; FK `accounts.id` | Account affected by the entry |
+| amount_delta | numeric(19,4) | not null; not equal to 0 | Signed balance change |
+| balance_after | numeric(19,4) | not null; greater than or equal to 0 | Account balance after this entry |
+| created_at | timestamptz | not null | Creation time |
+| (transaction_id, account_id) | - | unique | One entry per account in a transaction |
+
+#### Transaction invariants
+
+- Transaction entries are immutable.
+- A completed transfer has exactly two entries: one negative source entry and one positive destination entry.
+- The absolute amount of each transfer entry equals `transactions.amount`; the two entry deltas sum to zero.
+- The source and destination accounts differ, use the transaction currency, and the source account belongs to the initiating customer.
+- The application service validates these invariants and writes the transaction, entries, balance projection, daily-limit usage, idempotency outcome, and audit event in one database transaction.
 
 ### Idempotency records
 
 | Field | Type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | primary key | Record identifier |
-| customer_id | bigint | not null; FK `users.id` | Requesting customer |
+| --- | --- | --- | --- |
+| id | bigserial | primary key | Internal identifier |
+| customer_id | bigint | not null; FK customers.user_id | Customer who made the request |
 | account_id | bigint | not null; FK `accounts.id` | Source account, or deposit target |
-| operation_type | varchar(20) | not null; `DEPOSIT`, `WITHDRAWAL`, `TRANSFER` | Requested operation |
-| idempotency_key | varchar(255) | not null | Client retry key |
-| request_hash | char(64) | not null | Detects key reuse with a different request |
-| status | varchar(20) | not null; `IN_PROGRESS`, `COMPLETED`, `FAILED` | Processing state |
+| operation_type | varchar(20) | not null; `DEPOSIT`, `WITHDRAWAL`, or `TRANSFER` | Requested operation |
+| idempotency_key | varchar(255) | not null | Client-supplied request key |
+| request_hash | varchar(64) | not null | Hash used to reject a key reused with different input |
+| status | varchar(20) | not null; `IN_PROGRESS`, `COMPLETED`, or `FAILED` | Request-processing state |
 | transaction_id | uuid | nullable; FK `transactions.id` | Resulting transaction |
-| response_status | smallint | nullable | Saved HTTP status |
-| response_body | jsonb | nullable; no secrets | Saved retry response |
-| expires_at | timestamptz | not null | Retention deadline |
+| response_status | integer | nullable | HTTP response status retained for replay |
+| response_body | jsonb | nullable | HTTP response body retained for replay |
+| expires_at | timestamptz | not null | Expiry based on a configurable retention period |
 | created_at | timestamptz | not null | Creation time |
 | updated_at | timestamptz | not null | Last update |
-|  |  | unique `(customer_id, account_id, operation_type, idempotency_key)` | Retry scope |
+| (customer_id, account_id, operation_type, idempotency_key) | - | unique | Idempotency scope |
 
 ### Audit events
 
 | Field | Type | Constraints | Description |
-|---|---|---|---|
-| id | uuid | primary key | Event identifier |
-| actor_user_id | bigint | nullable; FK `users.id` | Actor |
-| action | varchar(100) | not null | E.g. `CUSTOMER_BLOCKED`, `LIMIT_CHANGED` |
-| target_type | varchar(50) | not null | Affected entity type |
-| target_id | varchar(64) | not null | Affected entity identifier |
-| correlation_id | uuid | not null | Request correlation identifier |
-| metadata | jsonb | nullable; no credentials, tokens, or unnecessary PII | Safe audit context |
+| --- | --- | --- | --- |
+| id | bigserial | primary key | Internal identifier |
+| actor_user_id | bigint | nullable; FK `users.id` | Actor, when known |
+| action | varchar(100) | not null | Audited action |
+| target_type | varchar(100) | not null | Type of affected resource |
+| target_id | varchar(255) | not null | Identifier of affected resource |
+| correlation_id | uuid | not null | Correlates the event with a request and transaction |
+| metadata | jsonb | nullable | Additional audit context |
 | created_at | timestamptz | not null | Event time |
 
 ### Account limit overrides
 
-Overrides expire at midnight in the customer's timezone; defaults become effective again without a reset job.
+Temporary overrides expire at midnight in the customer's timezone. A later change for the same account, operation type, and effective date updates that day's existing override.
 
 | Field | Type | Constraints | Description |
-|---|---|---|---|
-| id | bigserial | primary key | Override identifier |
-| account_id | bigint | not null; FK `accounts.id` | Account |
-| operation_type | varchar(20) | not null; `WITHDRAWAL` or `TRANSFER` | Limit category |
-| limit_amount | numeric(19,4) | not null; check `limit_amount > 0` | Temporary daily limit |
-| effective_date | date | not null | Customer-local date |
-| expires_at | timestamptz | not null | Customer-local midnight |
-| updated_by_user_id | bigint | not null; FK `users.id` | Customer changing the limit |
+| --- | --- | --- | --- |
+| id | bigserial | primary key | Internal identifier |
+| account_id | bigint | not null; FK `accounts.id` | Account with the temporary limit |
+| operation_type | varchar(20) | not null; `WITHDRAWAL` or `TRANSFER` | Operation constrained by the limit |
+| limit_amount | numeric(19,4) | not null; greater than or equal to 5 | Temporary daily limit |
+| effective_date | date | not null | Customer-local date to which the override applies |
+| expires_at | timestamptz | not null | Midnight in the customer's timezone |
+| updated_by_manager_id | bigint | not null; FK managers.user_id | Manager who set the override |
 | created_at | timestamptz | not null | Creation time |
-|  |  | unique `(account_id, operation_type, effective_date)` | One override per account, operation, and day |
+| updated_at | timestamptz | not null | Last update |
+| (account_id, operation_type, effective_date) | - | unique | One override for a given account, operation type, and day |
 
 ### Daily limit usage
 
-This durable aggregate is updated in the same transaction as the corresponding money movement.
+This durable aggregate is updated in the same database transaction as the money operation. The money-operation transaction locks and updates the corresponding row; it does not use a separate optimistic-lock version.
 
 | Field | Type | Constraints | Description |
-|---|---|---|---|
-| id | bigserial | primary key | Usage identifier |
-| account_id | bigint | not null; FK `accounts.id` | Account |
-| operation_type | varchar(20) | not null; `WITHDRAWAL` or `TRANSFER` | Limit category |
-| business_date | date | not null | Customer-local date |
-| used_amount | numeric(19,4) | not null; default 0; check `used_amount >= 0` | Completed amount counted toward the limit |
-| version | integer | not null; default 0 | Optimistic-lock version |
+| --- | --- | --- | --- |
+| id | bigserial | primary key | Internal identifier |
+| account_id | bigint | not null; FK `accounts.id` | Account whose limit is consumed |
+| operation_type | varchar(20) | not null; `WITHDRAWAL` or `TRANSFER` | Operation constrained by the limit |
+| usage_date | date | not null | Customer-local date |
+| used_amount | numeric(19,4) | not null; default 0; greater than or equal to 0 | Amount used on this date |
 | updated_at | timestamptz | not null | Last update |
-|  |  | unique `(account_id, operation_type, business_date)` | One aggregate per account, operation, and day |
-
-## REST API design
+| (account_id, operation_type, usage_date) | - | unique | One daily aggregate per account, operation type, and day |
