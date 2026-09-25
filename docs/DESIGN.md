@@ -17,7 +17,7 @@ Code is organized by domain area:
    - `controller` layer: authentication and authorization endpoints
    - `api validation` layer: validation of authentication input
    - `service` layer: authentication, authorization, JWT handling, and rate limiting
-   - `repository` layer: PostgreSQL persists users and credentials; Redis stores JWT invalidation and rate-limit data
+   - `repository` layer: PostgreSQL persists users and credentials; Redis stores JWT invalidation and rate-limit data. Every JWT includes a unique jti and exp claim; logout stores the jti in Redis until its expiration, and authentication rejects a token with an active invalidation entry.
 
 ## API rate limiting
 
@@ -154,7 +154,8 @@ A transfer has two entries: a negative source entry and a positive destination e
 - A completed transfer has exactly two entries: one negative source entry and one positive destination entry.
 - The absolute amount of each transfer entry equals `transactions.amount`; the two entry deltas sum to zero.
 - The source and destination accounts differ, use the transaction currency, and the source account belongs to the initiating customer.
-- The application service validates these invariants and writes the transaction, entries, balance projection, daily-limit usage, idempotency outcome, and audit event in one database transaction.
+- For a completed operation, the application service validates these invariants and writes the transaction, entries, balance projection, daily-limit usage, idempotency outcome, and audit event in one database transaction.
+- A failed operation writes a FAILED transaction with its failure code, idempotency outcome, and audit event, but has no transaction entries, balance change, or daily-limit usage.
 
 ### Idempotency records
 
@@ -240,6 +241,15 @@ This durable aggregate is updated in the same database transaction as the money 
 | used_amount | numeric(19,4) | not null; default 0; greater than or equal to 0 | Amount used on this date |
 | updated_at | timestamptz | not null | Last update |
 | (account_id, operation_type, usage_date) | - | unique | One daily aggregate per account, operation type, and day |
+
+## Expiry and cleanup
+
+Daily limits are evaluated, not restored by a midnight job. At each limit check and account-detail read, the service converts the current time to the customer timezone and uses the override for that local date only when it has not expired. Otherwise, it uses the configured default limit. An overdue cleanup run therefore cannot leave a temporary limit effective.
+
+A scheduled maintenance job runs hourly. It deletes expired account-limit overrides and expired records from both idempotency tables in small batches. Each expiring table has an expires_at index, and daily-limit usage has a usage_date index. The job may delete daily-limit usage aggregates older than a configurable retention period; immutable transactions, transaction entries, and audit events are never removed by this cleanup.
+
+Redis removes JWT invalidation entries through their expiry TTL. If the application later runs on multiple instances, a PostgreSQL advisory lock ensures that only one instance runs a cleanup cycle. Cleanup delay is harmless: expired overrides are ignored by business logic, while expired idempotency records remain unavailable only until cleanup completes.
+
 
 ## REST API
 
