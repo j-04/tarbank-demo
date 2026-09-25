@@ -40,7 +40,7 @@ A manager manages the customer record throughout its lifecycle.
 - Collect the identity-document expiry date when the document has one. A document with an expiry date must be valid when the customer is created.
 - Retrieve an existing customer.
 - Update an existing customer.
-- Block a customer and their accounts; this can be restored.
+- Block a customer and their accounts; this can be restored. Record the manager and time for every customer and affected-account status transition.
 - Deactivate a customer and their accounts; this cannot be reverted, and data remains visible to managers.
 
 ## Account lifecycle
@@ -51,7 +51,7 @@ When creating an account, select one supported currency. The account starts with
 
 - Retrieve an existing account.
 - Update an existing account: only daily limits can be changed; other critical information cannot be changed.
-- Block an account; this can be restored.
+- Block an account; this can be restored. Record the manager and time for each account status transition.
 - Deactivate an account; this cannot be reverted, and data remains visible to managers.
 
 ## Money movement
@@ -114,7 +114,7 @@ The daily amount that can be withdrawn or transferred from an account must be co
 ### Observability and auditing
 
 - Provide monitoring tools for metrics, logging, tracing, and auditing.
-- Use structured logs with correlation or request IDs.
+- Use structured logs with correlation or request IDs. Preserve a valid client-supplied X-Correlation-Id and generate a UUID only when the header is absent.
 - Provide metrics for latency, errors, and transaction outcomes.
 - Record audits for money movement and manager actions.
 - Do not log credentials, JWTs, or unnecessary personal data.
