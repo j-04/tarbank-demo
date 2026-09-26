@@ -153,7 +153,9 @@ A transfer has two entries: a negative source entry and a positive destination e
 - Transaction entries are immutable.
 - A completed transfer has exactly two entries: one negative source entry and one positive destination entry.
 - The absolute amount of each transfer entry equals `transactions.amount`; the two entry deltas sum to zero.
-- The source and destination accounts differ, use the transaction currency, and the source account belongs to the initiating customer.
+- A completed deposit has a destination account, and its transaction currency equals that account currency.
+- A completed withdrawal has a source account, and its transaction currency equals that account currency.
+- The source and destination accounts of a completed transfer differ, use the transaction currency, and the source account belongs to the initiating customer.
 - For a completed operation, the application service validates these invariants and writes the transaction, entries, balance projection, daily-limit usage, idempotency outcome, and audit event in one database transaction.
 - A failed operation writes a FAILED transaction with its failure code, idempotency outcome, and audit event, but has no transaction entries, balance change, or daily-limit usage.
 
@@ -170,7 +172,7 @@ A transfer has two entries: a negative source entry and a positive destination e
 | status | varchar(20) | not null; `IN_PROGRESS`, `COMPLETED`, or `FAILED` | Request-processing state |
 | transaction_id | uuid | nullable; FK `transactions.id` | Resulting transaction |
 | response_status | integer | nullable | HTTP response status retained for replay |
-| response_body | jsonb | nullable | HTTP response body retained for replay |
+| response_body | jsonb | nullable | Response data retained for replay; correlation envelope is rebuilt |
 | expires_at | timestamptz | not null | Expiry based on a configurable retention period |
 | created_at | timestamptz | not null | Creation time |
 | updated_at | timestamptz | not null | Last update |
@@ -190,7 +192,7 @@ This generic record supports non-money requests that can create resources or hav
 | request_hash | varchar(64) | not null | Normalized request hash used to reject changed retries |
 | status | varchar(20) | not null; IN_PROGRESS or COMPLETED | Request-processing state |
 | response_status | integer | nullable | HTTP response status retained for replay |
-| response_body | jsonb | nullable | HTTP response body retained for replay |
+| response_body | jsonb | nullable | Response data retained for replay; correlation envelope is rebuilt |
 | expires_at | timestamptz | not null | Configurable retention deadline |
 | created_at | timestamptz | not null | Creation time |
 | updated_at | timestamptz | not null | Last state change |
@@ -306,12 +308,12 @@ Customer endpoints are for managers. Customer response bodies omit the identity-
 | POST /api/v1/customers/{customerId}/accounts | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4 | None | { "currency": "EUR" } | 201: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "customerId": 42, "currency": "EUR", "availableBalance": "0.0000", "status": "ACTIVE" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS |
 | GET /api/v1/customers/{customerId}/accounts | Manager | Authorization: Bearer JWT | cursor, limit | None | 200: {<br>&nbsp;&nbsp;"data": { "items": [ { "accountNumber": "TB00000000000001", "currency": "EUR", "availableBalance": "0.0000", "status": "ACTIVE" } ], "nextCursor": "opaque-cursor" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
 | GET /api/v1/accounts | Customer | Authorization: Bearer JWT | cursor, limit | None | 200: customer account page using the account list response contract above | 401 UNAUTHENTICATED; 429 RATE_LIMIT_EXCEEDED |
-| GET /api/v1/accounts/{accountNumber} | Account-owning customer or an authorized manager | Authorization: Bearer JWT | None | None | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "currency": "EUR", "availableBalance": "125.5000", "status": "ACTIVE" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 429 RATE_LIMIT_EXCEEDED |
+| GET /api/v1/accounts/{accountNumber} | Account-owning customer or an authorized manager | Authorization: Bearer JWT | None | None | 200; response header: ETag: account-vN<br>{<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "currency": "EUR", "availableBalance": "125.5000", "status": "ACTIVE", "dailyLimits": { "withdrawal": { "amount": "500.0000", "expiresAt": "timestamp" }, "transfer": { "amount": "750.0000", "expiresAt": null } } },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 429 RATE_LIMIT_EXCEEDED |
 | PATCH /api/v1/accounts/{accountNumber}/daily-limits | Account-owning customer or an authorized manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4<br>If-Match: account-vN | None | At least one limit is required:<br>{<br>&nbsp;&nbsp;"withdrawalLimit": "500.0000",<br>&nbsp;&nbsp;"transferLimit": "750.0000"<br>} | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "withdrawalLimit": "500.0000", "transferLimit": "750.0000", "expiresAt": "timestamp" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 422 DAILY_LIMIT_OUT_OF_RANGE |
 | PATCH /api/v1/accounts/{accountNumber}/status | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>If-Match: account-vN | None | { "status": "BLOCKED" }<br>Allowed transitions: ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED. | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "status": "BLOCKED" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 409 INVALID_STATUS_TRANSITION |
 | GET /api/v1/accounts/{accountNumber}/transactions | Account-owning customer or an authorized manager | Authorization: Bearer JWT | cursor, limit, from, to | None | 200: {<br>&nbsp;&nbsp;"data": { "items": [ { "transactionId": "uuid", "type": "TRANSFER", "status": "COMPLETED", "amountDelta": "-25.0000", "balanceAfter": "100.5000", "currency": "EUR", "createdAt": "timestamp" } ], "nextCursor": "opaque-cursor" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
 
-The account-detail response includes the effective withdrawal and transfer limits for the customer-local day. It returns a temporary override when present; otherwise it returns the configured default and sets expiresAt to null.
+For GET /api/v1/accounts/{accountNumber}, the 200 response includes an ETag: account-vN header. The following dailyLimits object is a required property within its data object. It contains the effective limits for the customer-local day: a temporary override when present, otherwise the configured default. expiresAt is null when the configured default applies.
 
 ```json
 {
@@ -385,7 +387,7 @@ An error object has the following fields: code, message, and optional fieldError
 | Header format | Idempotency-Key is a client-generated UUID v4. |
 | Money-operation scope | Customer, source account or deposit target account, and operation type. |
 | Generic-request scope | Authenticated actor, API operation, resource scope, and idempotency key. |
-| Replay | A repeat request with the same scope and normalized request body returns the stored final HTTP status and response body. |
+| Replay | A repeat request with the same scope and normalized request body returns the stored final HTTP status and response data. The service builds the response envelope with the retry request correlationId. |
 | Conflict | A repeat key in the same scope with a different request body returns 409 IDEMPOTENCY_CONFLICT. |
 | Concurrent request | While the first request is in progress, a matching repeat request returns 409 REQUEST_IN_PROGRESS. |
 | Retention | Records expire after the configurable idempotency retention period. |
