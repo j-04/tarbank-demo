@@ -11,7 +11,7 @@ Code is organized by domain area:
    - `api validation` layer: validation of incoming data
    - `application service` layer: business operations and transaction orchestration
    - `transaction validation` layer: domain rules checked before a money operation
-   - `repository` layer: PostgreSQL persistence through JPA/Hibernate; QueryDSL supports complex queries
+   - `repository` layer: PostgreSQL persistence through JPA/Hibernate; Liquibase owns versioned schema migrations; QueryDSL supports complex queries
 
 2. Security
    - `controller` layer: authentication and authorization endpoints
@@ -54,6 +54,16 @@ Internal-only liveness and readiness endpoints are exposed through Spring Actuat
 ### Performance verification
 
 With the failure simulator disabled, a repeatable 50-concurrent-request load test runs against seeded data and includes login, account reads, paginated history, and money operations. It records p99 latency and error rate. Standard endpoints must remain below one second at p99. The test scenario and its results are documented with the project.
+
+## Delivery verification
+
+### Database migrations
+
+Liquibase owns versioned PostgreSQL schema migrations, including tables, constraints, indexes, and database-level checks. JPA/Hibernate validates and uses the resulting schema; it does not generate or alter the schema outside local experimentation. Testcontainers integration tests apply the same Liquibase migrations to a fresh PostgreSQL database.
+
+### Integration quality
+
+Integration coverage verifies money-operation locking, idempotency replay and crash paths, failure-simulator behavior, authorization, and user lifecycle enforcement. A reconciliation integration test queries PostgreSQL independently of application balance-maintenance code and verifies, for every account, that its stored balance equals COALESCE(SUM(transaction_entries.amount_delta), 0). The scenario includes successful operations, concurrent operations, and injected failures.
 
 ## Entity design
 
@@ -167,6 +177,8 @@ One transaction represents a requested deposit, withdrawal, or transfer. Transac
 
 A transfer has two entries: a negative source entry and a positive destination entry. A deposit or withdrawal has one entry.
 
+Deposits and withdrawals use one customer-account entry as an intentional demo simplification. A deposit has an external notional source, and a withdrawal has an external notional recipient. A production ledger would use balancing or clearing accounts and true double-entry records for every money operation.
+
 | Field | Type | Constraints | Description |
 | --- | --- | --- | --- |
 | id | bigserial | primary key | Internal identifier |
@@ -176,6 +188,11 @@ A transfer has two entries: a negative source entry and a positive destination e
 | balance_after | numeric(19,4) | not null; greater than or equal to 0 | Account balance after this entry |
 | created_at | timestamptz | not null | Creation time |
 | (transaction_id, account_id) | - | unique | One entry per account in a transaction |
+| (account_id, created_at DESC, id DESC) | - | index | Supports stable newest-first account-history pagination |
+
+### Account history pagination
+
+Account history is newest-first with the stable order created_at DESC, id DESC. The opaque cursor contains the last returned entry created_at and id position. The next page returns entries older than that tuple for the same account. Newer entries created after the first page are returned only by a new traversal. The transaction_entries index on account_id, created_at DESC, and id DESC supports this access pattern.
 
 #### Transaction invariants
 
@@ -271,6 +288,8 @@ Audit events preserve the complete manager-action history. A customer or account
 | correlation_id | uuid | not null | Correlates the event with a request and transaction |
 | metadata | jsonb | nullable | Additional audit context |
 | created_at | timestamptz | not null | Event time |
+
+For this demo, transaction entries and audit events are immutable by application rule and tests. In production, the application database role must not have UPDATE or DELETE permission on transaction, transaction-entry, or audit-event tables, or database triggers must reject those statements. Corrections use compensating records rather than mutations.
 
 ### Account limit overrides
 

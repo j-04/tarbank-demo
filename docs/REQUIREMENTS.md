@@ -143,6 +143,7 @@ The daily amount that can be withdrawn or transferred from an account must be co
 - Hibernate with QueryDSL (latest compatible version)
 - Swagger OpenAPI (latest compatible version)
 - PostgreSQL: mandatory primary database
+- Liquibase: mandatory provider for versioned database migrations
 - Redis: mandatory for storing and invalidating JWT tokens and distributed rate-limit state
 - JUnit (latest compatible version)
 - Testcontainers for setting up a test PostgreSQL instance
