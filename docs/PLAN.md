@@ -636,9 +636,76 @@ This phase adds the reliability and operability behavior required by the demo wi
 
 ## 10. Prepare the demo for review
 
-- Complete OpenAPI descriptions, examples, and response-error contracts.
-- Run full integration tests through Testcontainers and the application through Docker Compose.
-- Run and document the reproducible 50-concurrent-request load test with the failure simulator disabled.
-- Verify that logs and API responses never expose passwords, JWTs, document values, lookup hashes, or encryption keys.
+This final phase turns the implementation into a reproducible interview-demo handoff. It does not add product features: it verifies the delivered scope, makes setup and API behavior discoverable, and records one repeatable performance result.
 
-**Checkpoint:** a reviewer can configure secrets, start the stack, run migrations and tests, and demonstrate the main flows through Swagger or Postman.
+### 10.1 Establish final automated verification gates
+
+- [ ] Run the complete unit and integration-test suite from a clean checkout with the failure simulator disabled by default.
+- [ ] Require Testcontainers integration tests to apply Liquibase migrations to fresh PostgreSQL and exercise authorization, lifecycle, idempotency, money locking, limits, history, cleanup, rate limiting, and failure-simulator behavior.
+- [ ] Run the reconciliation query after the representative integration scenarios and fail the build if any stored account balance differs from the sum of immutable entry deltas.
+- [ ] Validate the migration changelog, application configuration binding, and Docker Compose configuration as part of the repeatable verification commands.
+- [ ] Keep test data isolated from local demo data. Tests must not depend on an already-running Compose database or Redis instance.
+- [ ] Record a short command sequence in the README so a reviewer can run all checks without guessing the profile, prerequisites, or order.
+
+### 10.2 Complete API documentation and examples
+
+- [ ] Generate and expose Swagger OpenAPI documentation from the implemented REST endpoints.
+- [ ] Verify that OpenAPI paths, headers, request bodies, success responses, error envelopes, status codes, and field constraints match REQUIREMENTS.md and DESIGN.md.
+- [ ] Document bearer-token authentication, X-Correlation-Id behavior, ETag retrieval and If-Match use, and Idempotency-Key UUID v4 use.
+- [ ] Include a clear retry example: generate a fresh UUID v4 for a new sensitive operation and reuse the exact same value only to retry that operation.
+- [ ] For Postman, document the built-in GUID variable or an equivalent UUID v4 generator; for Swagger UI, instruct the user to paste a generated UUID and retain it for a replay demonstration.
+- [ ] Provide safe sample requests for manager login, customer onboarding, account creation, customer login, deposit, withdrawal, transfer, limit increase, and history retrieval.
+- [ ] Keep API examples free of real credentials, secrets, document values, and personally identifying data.
+
+### 10.3 Finalize the Docker image and Compose demo runtime
+
+- [ ] Verify the multi-stage Docker build uses pinned image versions and produces a runnable application image without build tooling or source files in the runtime layer.
+- [ ] Run the service as a non-root container user where the chosen base image supports it.
+- [ ] Verify Docker Compose starts only the application, PostgreSQL, and Redis required for the demo; do not add Prometheus, Grafana, Jaeger, Elasticsearch, or notification infrastructure.
+- [ ] Keep PostgreSQL on its named volume and keep PostgreSQL and Redis off host-public ports unless a local troubleshooting need is explicitly documented.
+- [ ] Supply configuration and secrets through environment variables or ignored local files. Keep .env.example limited to variable names and safe placeholders.
+- [ ] Verify startup ordering, health checks, Liquibase migration execution, readiness, and a clean shutdown followed by a restart with persisted PostgreSQL data.
+- [ ] Document the minimum prerequisites, image build command, Compose startup command, health URL, Swagger URL, logs command, and safe local-data reset procedure.
+
+### 10.4 Run the reproducible load test
+
+- [ ] Choose one versioned load-test runner and document it. For this demo, a small k6 scenario run from a pinned container image is sufficient and avoids adding a monitoring stack.
+- [ ] Seed a known manager, active customers, and active EUR and USD accounts with enough isolated balances for the scenario.
+- [ ] Disable the failure simulator for the load test and use a rate-limit configuration that permits the controlled test workload without changing business behavior.
+- [ ] Generate unique idempotency keys for each new money operation; reuse a key only in an explicit replay case.
+- [ ] Exercise 50 concurrent requests across login, account list and detail reads, paginated history reads, deposits, withdrawals, and same-currency transfers.
+- [ ] Give money operations isolated or carefully funded source accounts so expected business failures do not dominate the result.
+- [ ] Include a warm-up period and enough successful samples to calculate meaningful p50, p95, p99, throughput, and error-rate values.
+- [ ] Report latency per endpoint group, including paginated history, rather than hiding a slow endpoint in a blended aggregate.
+- [ ] Require p99 below one second for the documented standard endpoint workload and record any expected or unexpected error rate separately.
+- [ ] Capture the application image tag or Git commit, Java version, Docker resources, PostgreSQL and Redis versions, load-test command, configuration relevant to the test, and result timestamp with the result.
+
+### 10.5 Perform the review walkthrough
+
+- [ ] Start the stack from a documented clean state and confirm liveness, readiness, metrics, and Swagger availability.
+- [ ] Demonstrate manager login, customer creation, customer retrieval, account creation, customer login, and account ownership enforcement.
+- [ ] Demonstrate a successful deposit, withdrawal, and transfer, then retrieve the affected account histories.
+- [ ] Demonstrate duplicate money-request replay with the same Idempotency-Key and conflicting reuse with changed input.
+- [ ] Demonstrate an ETag-protected customer or account update and a stale-ETag rejection.
+- [ ] Demonstrate a daily-limit increase and a rejected operation that exceeds the remaining limit.
+- [ ] Demonstrate a blocked customer or account rejecting a new protected or money request.
+- [ ] Demonstrate one controlled failure-simulator case and its expected rollback or post-commit replay behavior.
+- [ ] Show structured logs, one metric view, and trace output by correlation ID without exposing sensitive data.
+
+### 10.6 Conduct the final scope and security review
+
+- [ ] Compare the implementation, OpenAPI contract, Docker configuration, and tests against every requirement and design decision.
+- [ ] Confirm all deliberate non-goals remain absent: payment networks, cash systems, FX conversion, fees, interest, overdrafts, settlement states, full double-entry ledger, customer self-service profile management, and durable notification delivery.
+- [ ] Scan tracked configuration, Docker files, test fixtures, logs, and generated API examples for passwords, JWTs, signing keys, database credentials, document values, document hashes, and encryption keys.
+- [ ] Confirm internal management endpoints and dependency diagnostics do not leak sensitive configuration.
+- [ ] Confirm no migration mutates prior applied changesets and no running profile enables Hibernate schema creation or update.
+- [ ] Review Git status and commit only intended source, configuration templates, documentation, and test artifacts. Do not commit local volumes, environment files with secrets, load-test raw data containing sensitive values, or build outputs.
+
+### Completion checklist
+
+- [ ] A reviewer can clone the repository, set local configuration, build the Docker image, start the stack, and reach readiness and Swagger using the README alone.
+- [ ] The complete automated suite passes against fresh PostgreSQL through Testcontainers.
+- [ ] The manual walkthrough demonstrates the core roles, money safety, idempotency, limits, history, auditing, and failure behavior.
+- [ ] A dated, reproducible 50-concurrent-request result documents p99 latency below one second for the defined workload.
+- [ ] The final repository contains no secrets and implements only the agreed demo scope.
+- [ ] Commit the completed checkpoint with a message such as prepare demo for review.
