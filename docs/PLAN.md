@@ -328,12 +328,93 @@ This phase exposes the account lifecycle built on the persistence baseline intro
 
 ## 6. Implement the money-operation core
 
-- Add migrations, entities, and repositories for transactions, immutable transaction entries, financial idempotency records, and audit events.
-- Implement deposit, withdrawal, and same-currency transfer as complete vertical slices: controller, DTOs, input validation, authorization, service orchestration, and persistence.
-- Use one database transaction per operation, deterministic ascending account-lock ordering, and locked balance checks.
-- Reserve and finalize idempotency records within the same transaction as the side effect.
+This is the highest-risk implementation phase. It delivers correctly persisted simulated deposits, withdrawals, and same-currency transfers before adding the demo failure simulator, temporary daily-limit overrides, account-history endpoints, or rate limiting.
 
-**Checkpoint:** balances cannot become negative, duplicate requests replay their original result, and a completed transfer has exactly two offsetting entries.
+### 6.1 Add money-operation persistence
+
+- [ ] Add Liquibase changesets for transactions, immutable transaction entries, dedicated money-operation idempotency records, and daily-limit usage.
+- [ ] Reuse the audit-event table introduced in phase 3; do not create a second audit mechanism for money operations.
+- [ ] Model transaction type and final status as explicit enums. Generate a UUID transaction ID in the application.
+- [ ] Add transaction constraints for positive numeric(19,4) amount, supported currency, source and destination requirements by operation type, and a nullable failure code only when the transaction failed.
+- [ ] Add transaction-entry constraints for non-zero signed deltas, non-negative balance_after, one entry per account per transaction, and the account-history index defined in the design.
+- [ ] Add the unique money idempotency scope of customer, source or deposit-target account, operation type, and UUID v4 key.
+- [ ] Add the daily-limit usage unique key of account, operation type, and customer-local date, plus the non-negative used amount constraint.
+- [ ] Treat transaction entries as append-only in application code. No update or delete repository operation may be exposed for transactions, entries, or audit events.
+
+### 6.2 Define money API contracts and authorization
+
+- [ ] Define amount request DTOs for deposits and withdrawals, and a destination-account-number plus amount DTO for transfers.
+- [ ] Accept decimal amounts with no more than four fractional digits, reject zero and negative values, and do not accept a client-supplied currency.
+- [ ] Require a bearer token and UUID v4 Idempotency-Key for every money-operation endpoint.
+- [ ] Authorize only the account-owning customer to deposit, withdraw, or transfer from the source account. Managers cannot use customer money-operation endpoints.
+- [ ] Treat a deposit as an owner-only simulated top-up with a notional external source; no source account is required or created.
+- [ ] Treat a withdrawal as an owner-only simulated withdrawal with a notional external recipient; no destination account is required or created.
+- [ ] Require transfer source and destination accounts to differ, be ACTIVE, and use the same currency. The source account currency determines the operation currency.
+- [ ] Keep controllers limited to DTO handling and delegation. Put ownership, state, balance, currency, and limit rules in the application service under the database locks.
+
+### 6.3 Implement dedicated financial idempotency
+
+- [ ] Build a canonical request hash from the normalized money input, including operation type, source or deposit target, destination when present, and amount.
+- [ ] On the first request, create an IN_PROGRESS money idempotency record inside the same database transaction as the operation.
+- [ ] On an identical completed or failed retry, return the retained HTTP status and response data while rebuilding the outer response envelope with the retry correlation ID.
+- [ ] Reject a same-scope key with a different normalized request as 409 IDEMPOTENCY_CONFLICT.
+- [ ] When matching callers overlap, wait for the first transaction and replay its final record. Respect the configured database lock timeout and return 409 REQUEST_IN_PROGRESS if it is reached first.
+- [ ] Commit the final idempotency record before attempting to send the HTTP response. A process failure before commit leaves neither an operation nor a durable IN_PROGRESS record.
+- [ ] Keep generic API-request idempotency separate from this financial table and service.
+
+### 6.4 Make money concurrency explicit
+
+- [ ] Use PostgreSQL READ COMMITTED isolation with explicit pessimistic row locks; do not use SERIALIZABLE as the default strategy.
+- [ ] In one transaction, claim or check idempotency, lock the account rows, lock or atomically create the source daily-usage row when needed, validate under those locks, then write every durable outcome.
+- [ ] For a transfer, lock source and destination account rows in ascending internal account-ID order, never source-then-destination order.
+- [ ] For a withdrawal or transfer, atomically create or lock the matching daily-usage row through an upsert so concurrent first operations cannot create separate usage rows.
+- [ ] Perform balance and remaining-limit checks only after the relevant account and usage locks are held.
+- [ ] Do not use the account management version or ETag as a money-operation concurrency control. Money operations use database locks and dedicated idempotency instead.
+
+### 6.5 Apply money and daily-limit rules
+
+- [ ] Use the default withdrawal and transfer limit of 1,000.0000 in the account currency until phase 8 adds same-day overrides.
+- [ ] Calculate the source customer's current local date from the immutable IANA timezone before locating daily usage.
+- [ ] Require withdrawals to be at least 5.0000 and no greater than available balance or remaining withdrawal limit.
+- [ ] Require transfers to be positive, no greater than available balance or remaining transfer limit, and same-currency.
+- [ ] Do not consume daily-limit usage for deposits.
+- [ ] Reject blocked or deactivated accounts before any money state is changed.
+- [ ] Map business rejections to the documented stable codes, including ACCOUNT_NOT_ACTIVE, MINIMUM_WITHDRAWAL_AMOUNT, INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, and CURRENCY_MISMATCH.
+
+### 6.6 Persist successful and failed outcomes atomically
+
+- [ ] For a completed deposit, write one positive destination entry, update the account balance, create a COMPLETED transaction, write a safe audit event, and finalize idempotency in one transaction.
+- [ ] For a completed withdrawal, write one negative source entry, update the balance and daily usage, create a COMPLETED transaction, write an audit event, and finalize idempotency in one transaction.
+- [ ] For a completed transfer, write exactly two entries with equal absolute amount and opposite signs, update both balances, update source transfer usage, create a COMPLETED transaction, write an audit event, and finalize idempotency in one transaction.
+- [ ] Store balance_after on each entry using the balance projection written by the same transaction.
+- [ ] For an authenticated, well-formed request rejected by a business rule, persist a FAILED transaction, failure code, audit event, and failed idempotency outcome, but no entry, balance change, or daily-usage change.
+- [ ] Do not create a transaction for malformed, unauthenticated, or unauthorized requests that do not reach a valid money-operation attempt.
+- [ ] Send the final result to the internal NotificationService port only after the database transaction commits. Use the no-op or structured-log adapter; do not add durable notification delivery.
+
+### 6.7 Leave controlled extension points for later phases
+
+- [ ] Keep the money application service structured so a FailureSimulator port can inject before-transaction, before-commit, and after-commit response failures in phase 9.
+- [ ] Keep the effective-limit lookup behind a small service so phase 8 can add temporary overrides without changing the locking algorithm.
+- [ ] Do not expose transaction-history endpoints until phase 8 adds cursor pagination over the immutable entries.
+- [ ] Do not add rate-limiting behavior here; phase 9 adds it at the request boundary without changing money business logic.
+
+### 6.8 Verify the core slice before broader concurrency testing
+
+- [ ] Add integration tests for successful deposit, withdrawal, and transfer, including exact transaction, entry, balance, usage, audit, and idempotency records.
+- [ ] Test every operation against an inactive account, and test owner checks, self-transfer rejection, and cross-currency transfer rejection.
+- [ ] Test insufficient funds, minimum withdrawal amount, positive amount validation, and default daily-limit enforcement.
+- [ ] Test completed and failed idempotency replay, conflicting-key reuse, and no transaction entries or usage for a failed business operation.
+- [ ] Test the entry invariants: one deposit or withdrawal entry, two balanced transfer entries, and balance_after matching the stored balance.
+- [ ] Defer the high-contention and failure-simulator matrix to phases 7 and 9.
+
+### Completion checklist
+
+- [ ] Customers can perform idempotent simulated deposits, withdrawals, and same-currency transfers through the documented API.
+- [ ] Every completed operation atomically writes its transaction, entries, balances, applicable daily usage, audit event, and final idempotency response.
+- [ ] Every failed business operation retains a FAILED transaction and audit record without entries, balance movement, or daily-limit usage.
+- [ ] Explicit database locks prevent the basic balance and daily-limit races; phase 7 proves this under contention.
+- [ ] The money service exposes no customer-visible notification, history, temporary-override, or rate-limiting feature yet.
+- [ ] Commit the completed checkpoint with a message such as implement atomic money operations.
 
 ## 7. Add concurrency and failure tests before extending money features
 
@@ -343,10 +424,10 @@ This phase exposes the account lifecycle built on the persistence baseline intro
 
 **Checkpoint:** concurrency, idempotency, and reconciliation tests pass reliably against PostgreSQL.
 
-## 8. Implement daily limits and account history
+## 8. Complete daily-limit configuration and account history
 
-- Add daily-limit usage and temporary-override migrations, entities, and repositories.
-- Implement timezone-aware daily-limit evaluation with locked usage-row creation and updates.
+- Add temporary account-limit override migrations, entities, and repositories on top of the daily-limit usage records from phase 6.
+- Extend timezone-aware default-limit evaluation to select valid temporary overrides and expose effective limits through account detail and the limit-update endpoint.
 - Add limit endpoints with ETags and generic API idempotency records.
 - Implement newest-first cursor pagination for account history using (account_id, created_at DESC, id DESC).
 
