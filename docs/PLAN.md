@@ -557,12 +557,82 @@ This phase adds same-day limit increases on top of the default-limit and daily-u
 
 ## 9. Add demo resilience, protection, and observability
 
-- Add the disabled-by-default configurable failure simulator, including pre-commit and post-commit response-failure injection points.
-- Add scheduled cleanup for expired limit overrides and completed idempotency records.
-- Add Redis token-bucket rate limiting, including stricter authentication and money-operation rules.
-- Add structured logging, Micrometer metrics, OpenTelemetry tracing, and dependency-aware readiness behavior.
+This phase adds the reliability and operability behavior required by the demo without deploying a full monitoring, tracing, logging, or notification platform. The service emits standard signals and fails safely when its PostgreSQL or Redis dependencies are unavailable.
 
-**Checkpoint:** injected failures leave no partial movement; post-commit retries replay the result; dependency failures do not weaken security controls.
+### 9.1 Implement the configurable demo failure simulator
+
+- [ ] Define a FailureSimulator port used only by deposit, withdrawal, and transfer orchestration.
+- [ ] Bind configuration for enabled state, independent failure rate, and allowed injection points.
+- [ ] Enable the simulator only in the demo profile with a default 15 percent failure chance. Keep it disabled in normal automated tests and production-like profiles.
+- [ ] Implement BEFORE_TRANSACTION to fail before persistence begins and leave no database state.
+- [ ] Implement DURING_TRANSACTION_BEFORE_COMMIT to throw from inside the money transaction and roll back transaction, entries, balances, daily usage, audit, and idempotency together.
+- [ ] Implement AFTER_COMMIT_BEFORE_RESPONSE outside the committed transaction but before the HTTP response is delivered. The committed idempotency record must make the same-key retry replay the completed result.
+- [ ] Let tests force an injection point or deterministic selection; never rely on random probability for a test assertion.
+- [ ] Return only the existing safe INTERNAL_ERROR response for simulated infrastructure failure. Log the internal cause and correlation ID without exposing injection details to the client.
+- [ ] Keep business-rule rejections distinct from simulator failures: valid business rejection persists its FAILED transaction, while a simulated pre-commit failure leaves no durable money-operation state.
+
+### 9.2 Add bounded retention cleanup
+
+- [ ] Implement a scheduled hourly maintenance job with configurable batch sizes and retention periods.
+- [ ] Delete expired account-limit overrides in small batches. Their business expiration remains request-time evaluation, not deletion timing.
+- [ ] Delete only finalized money idempotency records and finalized generic idempotency records after their retention deadlines. Never delete an active record as a recovery strategy.
+- [ ] Optionally delete daily-limit usage aggregates older than configured retention, without affecting current-day checks.
+- [ ] Never delete or modify transactions, transaction entries, or audit events.
+- [ ] Use the expires_at and usage_date indexes; keep each cleanup transaction small enough not to block money operations.
+- [ ] If multiple application instances are introduced, guard a cleanup run with a PostgreSQL advisory lock so one instance performs each cycle.
+- [ ] Let Redis expire JWT invalidation keys through their existing TTL rather than scanning or deleting them in the cleanup job.
+- [ ] Emit safe cleanup counts and failure logs; a failed cleanup run must not make expired overrides effective.
+
+### 9.3 Add Redis-backed API rate limiting
+
+- [ ] Implement a Redis token-bucket limiter with an atomic refill-and-consume operation so limits are consistent across future application instances.
+- [ ] Configure capacity, refill rate, and endpoint-group policy through typed settings rather than hard-coded business logic.
+- [ ] Apply a coarse anonymous limit by direct client IP address. Because this demo has no reverse proxy, do not trust forwarded-client-IP headers.
+- [ ] For login, enforce both client-IP and normalized-username limits before password-hash verification.
+- [ ] For authenticated endpoints, enforce a limit keyed by authenticated user identity.
+- [ ] Apply a stricter additional limit to money operations keyed by source account identity.
+- [ ] Return 429 RATE_LIMIT_EXCEEDED with an accurate Retry-After header and do not call business logic or persist state for a limited request.
+- [ ] Keep circuit breakers out of inbound rate limiting. They are not a replacement for admission control.
+- [ ] Treat Redis as a required security dependency. When it is unavailable, do not bypass JWT invalidation or rate limits.
+
+### 9.4 Complete health and dependency behavior
+
+- [ ] Configure internal-only Spring Actuator liveness and readiness endpoints.
+- [ ] Report liveness when the process is running; make readiness require reachable PostgreSQL and Redis.
+- [ ] Return or map affected application requests to 503 DEPENDENCY_UNAVAILABLE when PostgreSQL or Redis is unavailable.
+- [ ] Keep credentials, connection strings, encryption keys, and detailed dependency errors out of health responses and logs.
+- [ ] Verify the default NotificationService adapter runs only after a successful commit and that its failure is non-blocking for the completed money operation.
+
+### 9.5 Emit useful, safe observability signals
+
+- [ ] Configure structured Log4j output with timestamp, level, correlation ID, internal code, public error code, HTTP status, operation type, and safe outcome fields.
+- [ ] Ensure logs never include passwords, JWTs, authorization headers, document values, document hashes, ciphertext, encryption keys, account numbers, or raw idempotency keys.
+- [ ] Add Micrometer HTTP request count, error count, latency histogram, p99-supporting distribution, rate-limit rejection, cleanup outcome, dependency state, and money-operation outcome metrics.
+- [ ] Keep metric labels low-cardinality. Never use account number, user ID, idempotency key, correlation ID, document identifier, or transaction ID as a metric tag.
+- [ ] Add OpenTelemetry spans for inbound HTTP handling, PostgreSQL activity, Redis activity, and money-operation orchestration.
+- [ ] Attach the correlation ID as a trace attribute while keeping the trace ID independent.
+- [ ] Make metrics and tracing exporter configuration optional. Do not require a local Prometheus, Grafana, Jaeger, Elasticsearch, Logstash, or Kibana deployment.
+- [ ] Expose only the intended internal Actuator and metrics endpoints in Docker Compose.
+
+### 9.6 Verify resilience and operability behavior
+
+- [ ] Test all three FailureSimulator injection points with a forced deterministic setting.
+- [ ] For BEFORE_TRANSACTION, assert no durable state. For DURING_TRANSACTION_BEFORE_COMMIT, assert complete rollback. For AFTER_COMMIT_BEFORE_RESPONSE, assert one durable completion and successful same-key replay.
+- [ ] Test that normal automated tests run with the simulator disabled.
+- [ ] Test cleanup with expired and unexpired overrides, both finalized idempotency tables, old usage aggregates, and immutable ledger or audit records.
+- [ ] Test rate-limit capacity, refill, Retry-After calculation, per-IP login protection, per-user protection, source-account money protection, and that limited requests do not reach business logic.
+- [ ] Test Redis unavailability: readiness becomes unhealthy and protected requests fail safely rather than accepting a token or bypassing a limiter.
+- [ ] Test PostgreSQL unavailability: readiness becomes unhealthy and data-dependent requests return the documented dependency error.
+- [ ] Use an in-memory meter registry and trace exporter in tests to assert expected signals and to verify no prohibited high-cardinality tags or secret log fields are emitted.
+- [ ] Test that notification-adapter failure after commit is logged or metered but does not change the stored money result.
+
+### Completion checklist
+
+- [ ] Every configurable simulator failure leaves either no state before commit or one replayable completed outcome after commit.
+- [ ] Expired short-lived records are cleaned safely; immutable financial and audit history is retained.
+- [ ] Redis rate limits basic abuse without weakening security when Redis is unavailable.
+- [ ] The service has safe logs, metrics, traces, liveness, readiness, and dependency-failure behavior without requiring an external observability stack.
+- [ ] Commit the completed checkpoint with a message such as add resilience and observability.
 
 ## 10. Prepare the demo for review
 
