@@ -39,6 +39,22 @@ The service uses a Redis-backed token-bucket limiter. Each check atomically refi
 
 Circuit breakers are not used for inbound rate limiting. They remain an option for calls to a failing external dependency.
 
+## Observability and operability
+
+The service emits standard instrumentation; it does not require a locally running Prometheus, Grafana, Jaeger, or Elasticsearch stack.
+
+Micrometer emits HTTP request count, errors, latency histograms including p99, rate-limit rejections, and money-operation outcomes. Metric labels must not contain account numbers, user identifiers, idempotency keys, or correlation IDs.
+
+OpenTelemetry traces inbound HTTP requests, database calls, and money operations. Traces carry the correlation ID as an attribute for investigation, but the trace identifier remains distinct. Structured logs include correlation ID, internal code, HTTP status, operation type, and safe outcome data.
+
+### Health and dependency behavior
+
+Internal-only liveness and readiness endpoints are exposed through Spring Actuator. Liveness reports that the process is running. Readiness requires PostgreSQL and Redis because both are core dependencies. If either is unavailable, the service becomes unready and affected requests return 503 DEPENDENCY_UNAVAILABLE; it does not bypass JWT invalidation or rate limiting. The optional NotificationService adapter remains non-blocking after a committed money operation.
+
+### Performance verification
+
+With the failure simulator disabled, a repeatable 50-concurrent-request load test runs against seeded data and includes login, account reads, paginated history, and money operations. It records p99 latency and error rate. Standard endpoints must remain below one second at p99. The test scenario and its results are documented with the project.
+
 ## Entity design
 
 The shared users table stores authentication credentials and lifecycle data. One-to-one manager and customer profile tables hold role-specific data. Foreign keys can therefore target the correct profile type instead of a generic user.
@@ -448,7 +464,8 @@ Internal codes use the form TAR-AREA-NNN. Structured logs for an error include i
 | TAR-CUSTOMER-001 | CUSTOMER_MUST_BE_ADULT | 422 | Customer creation was rejected because the customer is underage. |
 | TAR-TRANSFER-001 | INSUFFICIENT_FUNDS | 422 | Transfer cannot be completed because funds are insufficient. |
 | TAR-IDEMPOTENCY-001 | IDEMPOTENCY_CONFLICT | 409 | Idempotency key was reused with different input. |
-| TAR-INFRA-001 | INTERNAL_ERROR | 500 | Unexpected application, database, or dependency failure. |
+| TAR-INFRA-001 | INTERNAL_ERROR | 500 | Unexpected application failure. |
+| TAR-INFRA-002 | DEPENDENCY_UNAVAILABLE | 503 | PostgreSQL or Redis is unavailable. |
 
 | Status | Error code | Meaning |
 | --- | --- | --- |
@@ -461,4 +478,5 @@ Internal codes use the form TAR-AREA-NNN. Structured logs for an error include i
 | 428 | PRECONDITION_REQUIRED | An ETag is required for this update. |
 | 422 | CUSTOMER_MUST_BE_ADULT, MINIMUM_WITHDRAWAL_AMOUNT, INSUFFICIENT_FUNDS, DAILY_LIMIT_EXCEEDED, DAILY_LIMIT_OUT_OF_RANGE, ACCOUNT_NOT_ACTIVE, or CURRENCY_MISMATCH | Request is valid but cannot be completed under banking rules. |
 | 429 | RATE_LIMIT_EXCEEDED | Rate limit has been exceeded; response includes Retry-After. |
-| 500 | INTERNAL_ERROR | Unexpected failure; response contains no internal detail. |
+| 500 | INTERNAL_ERROR | Unexpected application failure; response contains no internal detail. |
+| 503 | DEPENDENCY_UNAVAILABLE | A required database or Redis dependency is unavailable. |
