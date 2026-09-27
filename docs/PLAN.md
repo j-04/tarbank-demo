@@ -114,12 +114,79 @@ This phase makes PostgreSQL schema evolution repeatable before any banking table
 
 ## 3. Implement identity, authentication, and customer creation
 
-- Add migrations, entities, repositories, and role checks for users, managers, and customers.
-- Seed manager accounts idempotently from deployment configuration.
-- Implement BCrypt password storage, JWT login/logout, JWT invalidation in Redis, and current-user status checks.
-- Implement manager customer creation and customer retrieval, including DTOs, input validation, document encryption, HMAC document lookup, and audit records.
+This is the first protected vertical slice. It creates the identity schema, starts configured manager accounts, authenticates users, and lets an active manager onboard and retrieve an adult customer. It does not yet implement customer updates, status transitions, accounts, or money movement.
 
-**Checkpoint:** a seeded manager can log in, create an eligible customer, and retrieve that customer; customers cannot call manager endpoints.
+### 3.1 Create the identity and onboarding schema
+
+- [ ] Add Liquibase changesets for users, managers, customers, audit events, and generic API-request idempotency records.
+- [ ] Add the roles, lifecycle-status values, foreign keys, unique username constraint, customer-to-manager relationship, customer version, and required timestamps from the design.
+- [ ] Add the unique identity-document constraint using document type, issuing country, and document lookup hash; never store a plaintext document number.
+- [ ] Add database constraints for fixed-format fields such as country codes and bounded text fields where appropriate, while keeping age, document-validity, password-format, and cross-profile rules in service validation.
+- [ ] Add the indexes needed now for login by username, customer retrieval, manager relationships, and idempotency lookup.
+- [ ] Create separate User, Manager, and Customer entities. Keep Manager and Customer as one-to-one role-specific profiles rather than a nullable-field mega-entity.
+- [ ] Model role and lifecycle status as explicit enums; do not accept arbitrary database strings in API or business logic.
+- [ ] Validate in the service that a user has exactly one profile matching its role, because this cross-table invariant cannot be expressed fully by a normal foreign key.
+
+### 3.2 Implement sensitive customer-data handling
+
+- [ ] Normalize identity-document numbers consistently before calculating their lookup value.
+- [ ] Encrypt each document number with application-level authenticated encryption and a configured key version before persistence.
+- [ ] Calculate the HMAC-SHA-256 lookup hash with a separate configured secret and use only that hash for duplicate detection.
+- [ ] Bind encryption and HMAC keys through validated configuration properties; fail startup if a required key is absent or malformed.
+- [ ] Ensure entities, DTOs, exceptions, structured logs, and audit metadata never expose document numbers, ciphertext, lookup hashes, or encryption keys.
+- [ ] Test that the persisted ciphertext is not plaintext and that the same normalized document is detected as a duplicate despite randomized encryption.
+
+### 3.3 Seed manager principals safely
+
+- [ ] Define configuration for one or more startup managers, including username, initial password, and display names.
+- [ ] Run manager seeding only after Liquibase has completed.
+- [ ] For each configured manager, create the User and Manager profile in one transaction when they do not already exist.
+- [ ] Make seeding idempotent: an existing matching manager is retained and is not silently overwritten on every restart.
+- [ ] BCrypt-hash manager passwords before persistence and never log configured credentials or hashes.
+- [ ] Do not add a REST endpoint for manager creation, reassignment, portfolio management, or manager customer-account access boundaries.
+
+### 3.4 Implement stateless JWT authentication
+
+- [ ] Configure Spring Security as stateless and deny protected endpoints by default.
+- [ ] Expose only login, health endpoints, and the intended documentation endpoint without a bearer token; keep all customer APIs manager-protected for this phase.
+- [ ] Implement login with normalized username and password verification. Issue a signed JWT only for an ACTIVE user.
+- [ ] Include a stable subject, role, unique jti, and configured expiration in the JWT. Default the expiration to one hour.
+- [ ] Implement bearer-token authentication that verifies signature and expiry, checks the jti invalidation entry in Redis, and loads the current user status.
+- [ ] Reject blocked or deactivated users before business logic. Create a principal that carries only the identifiers and role needed for authorization.
+- [ ] Implement authenticated logout by storing the JWT jti in Redis with a TTL no longer than the token's remaining lifetime.
+- [ ] Return the agreed login and logout error codes without revealing whether an invalid login failed because of an unknown username, wrong password, or inactive user.
+- [ ] Defer Redis rate limiting to phase 9, but keep the authentication flow structured so a boundary limiter can be added without changing login business logic.
+
+### 3.5 Implement manager-led customer onboarding
+
+- [ ] Define request and response DTOs for POST /api/v1/customers and GET /api/v1/customers/{customerId}.
+- [ ] Require a manager bearer token and a UUID v4 Idempotency-Key for customer creation.
+- [ ] Validate manager-assigned username format, exactly 12 printable password characters, and that the password differs from the username.
+- [ ] Validate required names, age of at least 18 at creation, optional non-expired document expiry date, E.164 phone number, ISO residence and issuing countries, address fields, and a valid IANA timezone.
+- [ ] In one database transaction, reserve the generic idempotency record, create the User and Customer profile, assign the acting manager as manager_id, write the CUSTOMER_CREATED audit event, and finalize the saved response.
+- [ ] Replay a completed identical creation request from its saved idempotency response. Reject reuse of the same key with different normalized input and handle a concurrent in-progress key according to the design.
+- [ ] Return only the documented safe customer fields. Never return the supplied password, password hash, document number, encrypted document, or lookup hash.
+- [ ] Implement manager retrieval of one customer using the safe customer response contract. Defer customer listing, profile updates, and lifecycle transitions to phase 4.
+
+### 3.6 Test the protected vertical slice
+
+- [ ] Add integration tests for startup manager seeding and safe repeated application startup.
+- [ ] Test successful login, invalid credentials, expired or invalidated JWTs, and rejection of blocked or deactivated principals where applicable.
+- [ ] Test that a manager can create and retrieve a customer and that a customer cannot use manager endpoints.
+- [ ] Test validation failures for underage customers, duplicate username, duplicate normalized identity document, invalid phone number, document expiry, password, and timezone.
+- [ ] Test customer-creation idempotency: completed replay, conflicting reuse, and concurrent in-progress behavior.
+- [ ] Assert that API responses and captured logs omit credentials and identity-document secrets.
+- [ ] Test that onboarding creates the customer and its audit event atomically.
+
+### Completion checklist
+
+- [ ] Liquibase creates the identity, audit, and generic idempotency schema on a fresh PostgreSQL database.
+- [ ] Configured manager accounts are seeded once, stored with BCrypt password hashes, and can log in.
+- [ ] Login returns a valid JWT for an ACTIVE user; logout invalidates that token until its natural expiration.
+- [ ] An active manager can create and retrieve an eligible customer through the documented API contract.
+- [ ] Customer responses and logs contain no passwords or identity-document secrets.
+- [ ] Customer creation is atomic, audited, and safely idempotent.
+- [ ] Commit the completed checkpoint with a message such as implement identity and customer onboarding.
 
 ## 4. Complete customer lifecycle management
 
