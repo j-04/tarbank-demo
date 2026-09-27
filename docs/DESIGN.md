@@ -248,14 +248,14 @@ Audit events preserve the complete manager-action history. A customer or account
 
 ### Account limit overrides
 
-Temporary overrides expire at midnight in the customer's timezone. A later change for the same account, operation type, and effective date updates that day's existing override.
+Withdrawal and transfer limits each default to 1,000.0000 in the account currency. A customer or manager may only increase a current-day limit to a value from 1,000.0000 through 3,000.0000, inclusive; lowering a limit is out of scope and is rejected as DAILY_LIMIT_OUT_OF_RANGE. The minimum withdrawal operation amount is 5.0000; a transfer operation has no separate minimum beyond being positive. Temporary overrides expire at midnight in the customer's timezone. A later increase for the same account, operation type, and effective date updates that day's existing override.
 
 | Field | Type | Constraints | Description |
 | --- | --- | --- | --- |
 | id | bigserial | primary key | Internal identifier |
 | account_id | bigint | not null; FK `accounts.id` | Account with the temporary limit |
 | operation_type | varchar(20) | not null; `WITHDRAWAL` or `TRANSFER` | Operation constrained by the limit |
-| limit_amount | numeric(19,4) | not null; greater than or equal to 5 | Temporary daily limit |
+| limit_amount | numeric(19,4) | not null; from 1,000.0000 through 3,000.0000, inclusive | Current-day increased limit |
 | effective_date | date | not null | Customer-local date to which the override applies |
 | expires_at | timestamptz | not null | Midnight in the customer's timezone |
 | updated_by_user_id | bigint | not null; FK users.id | Customer or manager who set the override |
@@ -332,7 +332,7 @@ Customer endpoints are for managers. Customer response bodies omit the identity-
 | GET /api/v1/customers/{customerId}/accounts | Lists accounts belonging to a manager-selected customer. |
 | GET /api/v1/accounts | Lists the authenticated customer accounts. |
 | GET /api/v1/accounts/{accountNumber} | Retrieves an account balance, current status, and effective daily limits. |
-| PATCH /api/v1/accounts/{accountNumber}/daily-limits | Sets one or both daily limits for the current customer-local day. |
+| PATCH /api/v1/accounts/{accountNumber}/daily-limits | Increases one or both daily limits for the current customer-local day. |
 | PATCH /api/v1/accounts/{accountNumber}/status | Blocks, unblocks, or permanently deactivates an account. |
 | GET /api/v1/accounts/{accountNumber}/transactions | Returns paginated account history. |
 
@@ -341,8 +341,8 @@ Customer endpoints are for managers. Customer response bodies omit the identity-
 | POST /api/v1/customers/{customerId}/accounts | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4 | None | { "currency": "EUR" } | 201: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "customerId": 42, "currency": "EUR", "availableBalance": "0.0000", "status": "ACTIVE" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS |
 | GET /api/v1/customers/{customerId}/accounts | Manager | Authorization: Bearer JWT | cursor, limit | None | 200: {<br>&nbsp;&nbsp;"data": { "items": [ { "accountNumber": "TB00000000000001", "currency": "EUR", "availableBalance": "0.0000", "status": "ACTIVE" } ], "nextCursor": "opaque-cursor" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
 | GET /api/v1/accounts | Customer | Authorization: Bearer JWT | cursor, limit | None | 200: customer account page using the account list response contract above | 401 UNAUTHENTICATED; 429 RATE_LIMIT_EXCEEDED |
-| GET /api/v1/accounts/{accountNumber} | Account-owning customer or an authorized manager | Authorization: Bearer JWT | None | None | 200; response header: ETag: account-vN<br>{<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "currency": "EUR", "availableBalance": "125.5000", "status": "ACTIVE", "dailyLimits": { "withdrawal": { "amount": "500.0000", "expiresAt": "timestamp" }, "transfer": { "amount": "750.0000", "expiresAt": null } } },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 429 RATE_LIMIT_EXCEEDED |
-| PATCH /api/v1/accounts/{accountNumber}/daily-limits | Account-owning customer or an authorized manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4<br>If-Match: account-vN | None | At least one limit is required:<br>{<br>&nbsp;&nbsp;"withdrawalLimit": "500.0000",<br>&nbsp;&nbsp;"transferLimit": "750.0000"<br>} | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "withdrawalLimit": "500.0000", "transferLimit": "750.0000", "expiresAt": "timestamp" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 422 DAILY_LIMIT_OUT_OF_RANGE |
+| GET /api/v1/accounts/{accountNumber} | Account-owning customer or an authorized manager | Authorization: Bearer JWT | None | None | 200; response header: ETag: account-vN<br>{<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "currency": "EUR", "availableBalance": "125.5000", "status": "ACTIVE", "dailyLimits": { "withdrawal": { "amount": "1500.0000", "expiresAt": "timestamp" }, "transfer": { "amount": "1000.0000", "expiresAt": null } } },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 429 RATE_LIMIT_EXCEEDED |
+| PATCH /api/v1/accounts/{accountNumber}/daily-limits | Account-owning customer or an authorized manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4<br>If-Match: account-vN | None | At least one limit is required:<br>{<br>&nbsp;&nbsp;"withdrawalLimit": "1500.0000",<br>&nbsp;&nbsp;"transferLimit": "1750.0000"<br>} | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "withdrawalLimit": "1500.0000", "transferLimit": "1750.0000", "expiresAt": "timestamp" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 422 DAILY_LIMIT_OUT_OF_RANGE |
 | PATCH /api/v1/accounts/{accountNumber}/status | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>If-Match: account-vN | None | { "status": "BLOCKED" }<br>Allowed transitions: ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED. | 200: {<br>&nbsp;&nbsp;"data": { "accountNumber": "TB00000000000001", "status": "BLOCKED" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 409 INVALID_STATUS_TRANSITION |
 | GET /api/v1/accounts/{accountNumber}/transactions | Account-owning customer or an authorized manager | Authorization: Bearer JWT | cursor, limit, from, to | None | 200: {<br>&nbsp;&nbsp;"data": { "items": [ { "transactionId": "uuid", "type": "TRANSFER", "status": "COMPLETED", "amountDelta": "-25.0000", "balanceAfter": "100.5000", "currency": "EUR", "createdAt": "timestamp" } ], "nextCursor": "opaque-cursor" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
 
@@ -352,11 +352,11 @@ For GET /api/v1/accounts/{accountNumber}, the 200 response includes an ETag: acc
 {
   "dailyLimits": {
     "withdrawal": {
-      "amount": "500.0000",
+      "amount": "1500.0000",
       "expiresAt": "2026-09-25T22:00:00Z"
     },
     "transfer": {
-      "amount": "750.0000",
+      "amount": "1000.0000",
       "expiresAt": null
     }
   }
