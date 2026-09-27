@@ -139,6 +139,7 @@ The daily amount that can be withdrawn or transferred from an account must be co
 ## Technology stack
 
 - Java 25 LTS
+- Gradle: mandatory build automation tool
 - Spring: Boot, Security, and Test (latest compatible versions)
 - Hibernate with QueryDSL (latest compatible version)
 - Swagger OpenAPI (latest compatible version)
