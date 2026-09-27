@@ -6,13 +6,14 @@ Commit after each completed checkpoint. Do not implement deferred notification d
 
 ## 1. Bootstrap the application
 
-This phase creates a reproducible, containerized application shell. It deliberately excludes domain entities, Liquibase schema work, API endpoints, and business rules; those begin in later phases.
+This phase creates a reproducible, containerized application shell. It deliberately excludes domain entities, domain schema changes, API endpoints, and business rules; those begin in later phases.
 
 ### 1.1 Create the build
 
 - [ ] Create a Maven-based Spring Boot project targeting Java 25.
 - [ ] Pin the Java, Spring Boot, and plugin versions in the build configuration.
 - [ ] Add only the initial dependencies needed to start the service: Spring Web, Validation, Actuator, Security, Data JPA, Data Redis, PostgreSQL, Liquibase, Log4j, and test support.
+- [ ] Create a valid, empty Liquibase master changelog and enable it at startup so the phase-1 application checkpoint can run before domain migrations exist.
 - [ ] Configure the build to use Log4j rather than the default logging implementation.
 - [ ] Add a minimal application class and verify that the project compiles and its unit-test task runs.
 
@@ -33,10 +34,12 @@ This phase creates a reproducible, containerized application shell. It deliberat
 
 ### 1.4 Add common HTTP behavior
 
-- [ ] Define the standard API error envelope with HTTP status, stable internal code, message, correlation ID, and optional field errors.
+- [ ] Define the standard API error envelope with HTTP status, stable public error code, safe message, correlation ID, and optional field errors.
+- [ ] Keep internal TAR-AREA-NNN codes only in structured logs and support diagnostics; never include them in an API response.
 - [ ] Add global exception handling for malformed JSON, Bean Validation failures, unsupported methods, and unexpected errors.
-- [ ] Add a correlation-ID filter: preserve a valid client-supplied X-Correlation-Id; otherwise generate a UUID.
-- [ ] Return the correlation ID in every response and make it available to structured logs.
+- [ ] Add a correlation-ID filter: preserve a valid client-supplied X-Correlation-Id; generate a UUID only when the header is absent; reject a supplied malformed value with 400 VALIDATION_ERROR.
+- [ ] Return the correlation ID in every response except a malformed supplied X-Correlation-Id: its error body has correlationId: null and its response omits X-Correlation-Id. Never echo the malformed value; make each accepted or generated ID available to structured logs.
+- [ ] Add tests that an absent correlation header receives a generated UUID in both the response header and body, while a malformed supplied header receives exactly 400 VALIDATION_ERROR, correlationId: null in the error body, no X-Correlation-Id response header, and no echo of the malformed value.
 - [ ] Do not add domain-specific error codes or authorization rules yet; add them with their owning feature.
 
 ### 1.5 Containerize the local demo
@@ -71,9 +74,9 @@ This phase makes PostgreSQL schema evolution repeatable before any banking table
 
 ### 2.1 Configure Liquibase as the schema owner
 
-- [ ] Add the Liquibase master changelog under the application resources and configure Spring Boot to run it at startup.
+- [ ] Use the valid empty Liquibase master changelog created in phase 1 and verify Spring Boot runs it at startup.
 - [ ] Establish one naming convention for ordered versioned changelogs, for example a version or timestamp followed by a concise purpose.
-- [ ] Add the initial changelog baseline. Do not add a no-op changeset merely to create a migration number.
+- [ ] Add the first versioned changelog only when it owns a real schema change. Do not add a no-op changeset merely to create a migration number.
 - [ ] Configure every profile to use Liquibase for schema changes.
 - [ ] Set Hibernate ddl-auto to validate once entities exist; do not use create, create-drop, or update outside an explicitly isolated local experiment.
 - [ ] Treat an applied changeset as immutable. Correct a released schema through a new changeset rather than editing migration history.
@@ -89,15 +92,15 @@ This phase makes PostgreSQL schema evolution repeatable before any banking table
 
 ### 2.3 Build the Testcontainers integration-test base
 
-- [ ] Add a PostgreSQL Testcontainers dependency and a reusable test container configuration.
-- [ ] Start the container before the Spring test application context and supply its JDBC connection properties dynamically.
-- [ ] Ensure each integration-test run starts from a fresh database and applies the same Liquibase changelogs used in the demo runtime.
+- [ ] Add pinned PostgreSQL and Redis Testcontainers dependencies with reusable test container configuration.
+- [ ] Start both containers before the Spring test application context and supply JDBC and Redis connection properties dynamically.
+- [ ] Ensure each integration-test run starts from a fresh PostgreSQL database, applies the same Liquibase changelogs used in the demo runtime, and uses isolated Redis state.
 - [ ] Keep container image versions pinned and separate integration tests from fast unit tests.
-- [ ] Add only generic test utilities in this phase, such as a clock or JSON helper. Add authenticated-request and seeded-user helpers with the identity feature in phase 3.
+- [ ] Add only generic test utilities in this phase, such as a clock or JSON helper. Clear the dedicated Redis test database or namespace keys between tests. Add authenticated-request and seeded-user helpers with the identity feature in phase 3.
 
 ### 2.4 Verify migration behavior
 
-- [ ] Add an integration test that starts the application against a fresh Testcontainers PostgreSQL instance.
+- [ ] Add an integration test that starts the application against fresh PostgreSQL and Redis Testcontainers.
 - [ ] Assert that Liquibase completes successfully and records its applied changelogs.
 - [ ] Verify that a second application startup against the same database does not reapply or alter completed migrations.
 - [ ] Verify that an invalid or missing changelog fails startup clearly rather than allowing Hibernate to create a replacement schema.
@@ -107,7 +110,7 @@ This phase makes PostgreSQL schema evolution repeatable before any banking table
 
 - [ ] The project starts against PostgreSQL with Liquibase enabled.
 - [ ] No profile can automatically create or update the production-like schema through Hibernate.
-- [ ] The Testcontainers integration test creates a fresh PostgreSQL database and applies the full migration set.
+- [ ] The Testcontainers integration test creates a fresh PostgreSQL database, applies the full migration set, and uses isolated Redis state.
 - [ ] Re-running the application against the same database is safe and does not change applied migrations.
 - [ ] No H2-specific configuration or test assumptions are present.
 - [ ] Commit the completed checkpoint with a message such as establish Liquibase migration baseline.
@@ -119,7 +122,7 @@ This is the first protected vertical slice. It creates the identity schema, star
 ### 3.1 Create the identity and onboarding schema
 
 - [ ] Add Liquibase changesets for users, managers, customers, audit events, and generic API-request idempotency records.
-- [ ] Add the roles, lifecycle-status values, foreign keys, unique username constraint, customer-to-manager relationship, customer version, and required timestamps from the design.
+- [ ] Add the roles, lifecycle-status values, credential version, foreign keys, unique username constraint, customer-to-manager relationship, customer version, and required timestamps from the design.
 - [ ] Add the unique identity-document constraint using document type, issuing country, and document lookup hash; never store a plaintext document number.
 - [ ] Add database constraints for fixed-format fields such as country codes and bounded text fields where appropriate, while keeping age, document-validity, password-format, and cross-profile rules in service validation.
 - [ ] Add the indexes needed now for login by username, customer retrieval, manager relationships, and idempotency lookup.
@@ -150,8 +153,8 @@ This is the first protected vertical slice. It creates the identity schema, star
 - [ ] Configure Spring Security as stateless and deny protected endpoints by default.
 - [ ] Expose only login, health endpoints, and the intended documentation endpoint without a bearer token; keep all customer APIs manager-protected for this phase.
 - [ ] Implement login with normalized username and password verification. Issue a signed JWT only for an ACTIVE user.
-- [ ] Include a stable subject, role, unique jti, and configured expiration in the JWT. Default the expiration to one hour.
-- [ ] Implement bearer-token authentication that verifies signature and expiry, checks the jti invalidation entry in Redis, and loads the current user status.
+- [ ] Include a stable subject, role, unique jti, credential-version claim, and configured expiration in the JWT. Default the expiration to one hour.
+- [ ] Implement bearer-token authentication that verifies signature and expiry, checks the jti invalidation entry in Redis, and loads the current user status and credential version.
 - [ ] Reject blocked or deactivated users before business logic. Create a principal that carries only the identifiers and role needed for authorization.
 - [ ] Implement authenticated logout by storing the JWT jti in Redis with a TTL no longer than the token's remaining lifetime.
 - [ ] Return the agreed login and logout error codes without revealing whether an invalid login failed because of an unknown username, wrong password, or inactive user.
@@ -171,7 +174,7 @@ This is the first protected vertical slice. It creates the identity schema, star
 ### 3.6 Test the protected vertical slice
 
 - [ ] Add integration tests for startup manager seeding and safe repeated application startup.
-- [ ] Test successful login, invalid credentials, expired or invalidated JWTs, and rejection of blocked or deactivated principals where applicable.
+- [ ] Test successful login, invalid credentials, expired, invalidated, or credential-version-mismatched JWTs, and rejection of blocked or deactivated principals where applicable.
 - [ ] Test that a manager can create and retrieve a customer and that a customer cannot use manager endpoints.
 - [ ] Test validation failures for underage customers, duplicate username, duplicate normalized identity document, invalid phone number, document expiry, password, and timezone.
 - [ ] Test customer-creation idempotency: completed replay, conflicting reuse, and concurrent in-progress behavior.
@@ -197,12 +200,16 @@ This phase completes the manager-controlled lifecycle after onboarding: safe pro
 - [ ] Add the accounts Liquibase changeset with the account owner, currency, balance, lifecycle status, status-change metadata, management version, and timestamps defined in the design.
 - [ ] Add the Account entity and repository methods needed to load a customer's non-deactivated accounts for a status change.
 - [ ] Add a repository method that locks the affected account rows before their statuses are changed.
+- [ ] Define one shared lifecycle locking protocol: lock the customer row first, then lock affected account rows in ascending internal account-ID order.
+- [ ] Require account creation and account unblocking in phase 5 to use that same customer-first protocol before they verify that a customer is ACTIVE.
 - [ ] Do not expose account creation, account detail, daily-limit, or account-status endpoints in this phase. Those remain phase 5.
 - [ ] Update phase 5 to build its public account lifecycle on this persistence baseline rather than creating a second account schema.
 
 ### 4.2 Implement manager customer listing and safe reads
 
-- [ ] Add manager-only GET /api/v1/customers with bounded cursor pagination and an optional lifecycle-status filter.
+- [ ] Add the compatible QueryDSL JPA dependency, annotation processing, and generated-source build configuration.
+- [ ] Add manager-only GET /api/v1/customers with bounded cursor pagination and an optional lifecycle-status filter, implemented with QueryDSL predicates for the optional filter and keyset cursor.
+- [ ] Verify from a clean checkout that annotation processing generates and compiles the Q-types used by customer listing.
 - [ ] Extend GET /api/v1/customers/{customerId} to return the current customer ETag in the customer-vN form.
 - [ ] Keep customer lists and detail responses limited to safe fields; never disclose document numbers, lookup hashes, ciphertext, passwords, or password hashes.
 - [ ] Keep manager authorization global as specified in the design: every ACTIVE manager may access every customer, without a portfolio restriction.
@@ -227,21 +234,23 @@ This phase completes the manager-controlled lifecycle after onboarding: safe pro
 - [ ] For deactivation, lock and permanently deactivate every non-deactivated account. Never permit reversal.
 - [ ] Increment the customer version and every changed account management version. Record the acting manager and timestamp on each changed customer and account.
 - [ ] Write one CUSTOMER_STATUS_CHANGED audit event and one ACCOUNT_STATUS_CHANGED audit event for each affected account, with old and new statuses and the same correlation ID.
-- [ ] Use deterministic locking of the customer and affected account rows so this workflow remains safe when account-management endpoints arrive in phase 5.
+- [ ] Lock the customer row first and then affected account rows in ascending internal account-ID order, matching the shared protocol used by account creation and unblocking.
 
 ### 4.5 Implement the manager-assisted password-reset flow
 
-- [ ] Implement password reset as a manager-authorized branch-terminal operation, not a customer self-service or unauthenticated reset route.
+- [ ] Define POST /api/v1/customers/{customerId}/password-reset as a manager-authorized operation used by the assumed secure branch terminal; it is not a customer self-service or unauthenticated route.
+- [ ] Require Authorization: Bearer JWT, Content-Type: application/json, and Idempotency-Key: UUID v4. Accept only a newPassword field and return a safe PASSWORD_RESET status response.
 - [ ] Validate the replacement password using the same exactly-12-printable-character rule and username comparison used during onboarding.
-- [ ] BCrypt-hash the replacement password before persistence and ensure neither its value nor hash reaches a response, log, audit metadata, or exception.
-- [ ] Record a CUSTOMER_PASSWORD_RESET audit event with the acting manager and correlation ID, without sensitive metadata.
-- [ ] Add the restricted terminal/API contract to the API documentation before exposing the flow in the demo.
+- [ ] In one transaction, reserve generic idempotency, lock the corresponding user row, BCrypt-hash the replacement password, write the hash and incremented credential version together, write a CUSTOMER_PASSWORD_RESET audit event, and finalize the replay response.
+- [ ] Include the credential version in every JWT and reject a token whose claim no longer matches the user's current version with 401 UNAUTHENTICATED. A completed reset therefore invalidates all previously issued customer tokens immediately.
+- [ ] Ensure neither the replacement password nor hash reaches a response, log, audit metadata, or exception.
+- [ ] Keep the physical branch terminal outside this project. It is an assumed authenticated manager client of this operation, not a separate application to implement.
 
 ### 4.6 Enforce lifecycle status in active sessions
 
 - [ ] Reuse the phase-3 per-request user-status lookup so a token issued before a customer is blocked or deactivated is rejected on its next protected request.
 - [ ] Do not attempt to cancel a request that was already authenticated and began its database transaction before the status change; it follows the established request-entry authentication policy.
-- [ ] Do not add a separate token-version scheme or bulk Redis invalidation for lifecycle changes; the current status check is the chosen enforcement mechanism.
+- [ ] Do not add a separate token-version scheme or bulk Redis invalidation for lifecycle changes; the current status check is the chosen enforcement mechanism. The credential version is reserved for password-reset invalidation.
 
 ### 4.7 Test customer lifecycle behavior
 
@@ -250,7 +259,7 @@ This phase completes the manager-controlled lifecycle after onboarding: safe pro
 - [ ] Test every allowed and forbidden customer-status transition.
 - [ ] Create accounts through repository fixtures and verify blocking and deactivation cascade atomically, while unblocking leaves account statuses unchanged.
 - [ ] Test that an already-issued customer token is denied on its next protected request after blocking or deactivation.
-- [ ] Test the manager-assisted password reset flow, including validation, BCrypt storage, authorization, and audit logging.
+- [ ] Test the manager-assisted password reset flow, including validation, BCrypt storage, authorization, idempotency, audit logging, and immediate rejection of previously issued customer tokens. Race two different idempotency keys with different passwords, assert that the credential version increases twice and a token issued after the first reset is rejected after the second, and assert that a same-key replay neither changes the hash nor increments the version again.
 - [ ] Test that customer, account, and audit changes roll back together if the transaction fails.
 
 ### Completion checklist
@@ -278,7 +287,7 @@ This phase exposes the account lifecycle built on the persistence baseline intro
 ### 5.2 Implement manager account creation
 
 - [ ] Define the POST /api/v1/customers/{customerId}/accounts request and safe response DTOs.
-- [ ] Require an ACTIVE manager, a UUID v4 Idempotency-Key, and a target customer that is ACTIVE.
+- [ ] Require an ACTIVE manager, a UUID v4 Idempotency-Key, and a target customer that is ACTIVE. Lock the target customer row before that status check and before account creation.
 - [ ] Accept only EUR or USD and create the account with balance 0.0000 and ACTIVE status.
 - [ ] In one database transaction, reserve the generic idempotency record, generate and persist the account, record the creating manager, write an ACCOUNT_CREATED audit event, and finalize the replay response.
 - [ ] Scope account-creation idempotency to the manager, customer, and account-creation operation. Replay an identical completed request without creating another account; reject conflicting reuse or a concurrent in-progress request as defined by the generic idempotency policy.
@@ -301,7 +310,7 @@ This phase exposes the account lifecycle built on the persistence baseline intro
 - [ ] Allow only ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED.
 - [ ] Reject every other transition, including DEACTIVATED reactivation, with 409 INVALID_STATUS_TRANSITION.
 - [ ] Permit an account unblock only when its customer is ACTIVE. A manager must explicitly unblock each eligible account after its customer is restored.
-- [ ] Use one transaction to verify the account and customer state, apply a valid transition, increment management_version once, and record the manager and timestamp.
+- [ ] In one transaction, identify the account owner, lock the customer row first, then lock and re-read the target account, verify the customer and account state, apply a valid transition, increment management_version once, and record the manager and timestamp.
 - [ ] Write an ACCOUNT_STATUS_CHANGED audit event with old and new status, acting manager, target account, and correlation ID.
 - [ ] Keep customer-level cascade behavior in phase 4 as the single owner of a customer-driven account status change; do not duplicate it in the account controller.
 
@@ -313,6 +322,7 @@ This phase exposes the account lifecycle built on the persistence baseline intro
 - [ ] Test account-creation idempotency for completed replay, conflicting reuse, and concurrent matching requests.
 - [ ] Test manager and owner account lists, detail ownership checks, pagination validation, and safe response fields.
 - [ ] Test account ETag generation, missing and stale If-Match behavior, every valid and invalid account transition, and the active-customer rule for unblocking.
+- [ ] Race account creation and account unblocking with customer blocking and deactivation. Assert that no new or restored ACTIVE account can commit after the customer transition has completed.
 - [ ] Test that account status changes and audit events commit or roll back together.
 - [ ] Test that account detail reports configured default daily limits without creating an override record.
 
@@ -423,7 +433,7 @@ This phase verifies the money-operation core against real PostgreSQL behavior. I
 ### 7.1 Build deterministic concurrent-test support
 
 - [ ] Run concurrency tests against the PostgreSQL Testcontainers setup from phase 2, not against an in-memory database.
-- [ ] Create active customers and accounts through fixtures with explicit balances, currencies, and timezones.
+- [ ] Create active customers and zero-balance accounts through fixtures, then fund them through simulated deposits or matching funding transactions and entries. Never directly insert a nonzero balance without corresponding immutable history.
 - [ ] Give every concurrent task its own application transaction and persistence context. Do not wrap the whole test in one transaction.
 - [ ] Coordinate competing requests with latches or barriers so they reach the intended lock point together.
 - [ ] Set a bounded database lock timeout and test-executor timeout so a deadlock or blocked test fails clearly instead of hanging the build.
@@ -670,7 +680,7 @@ This final phase turns the implementation into a reproducible interview-demo han
 ### 10.4 Run the reproducible load test
 
 - [ ] Choose one versioned load-test runner and document it. For this demo, a small k6 scenario run from a pinned container image is sufficient and avoids adding a monitoring stack.
-- [ ] Seed a known manager, active customers, and active EUR and USD accounts with enough isolated balances for the scenario.
+- [ ] Seed a known manager, active customers, and active EUR and USD zero-balance accounts, then fund the load-test accounts through simulated deposits or matching funding transactions and entries so reconciliation remains valid.
 - [ ] Disable the failure simulator for the load test and use a rate-limit configuration that permits the controlled test workload without changing business behavior.
 - [ ] Generate unique idempotency keys for each new money operation; reuse a key only in an explicit replay case.
 - [ ] Exercise 50 concurrent requests across login, account list and detail reads, paginated history reads, deposits, withdrawals, and same-currency transfers.

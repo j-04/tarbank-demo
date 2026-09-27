@@ -29,11 +29,11 @@ Code is organized by domain area:
    - `controller` layer: authentication and authorization endpoints
    - `api validation` layer: validation of authentication input
    - `service` layer: authentication, authorization, JWT handling, and rate limiting
-   - `repository` layer: PostgreSQL persists users and credentials; Redis stores JWT invalidation and rate-limit data. Every JWT includes a unique jti and exp claim; logout stores the jti in Redis until its expiration, and authentication rejects a token with an active invalidation entry.
+   - `repository` layer: PostgreSQL persists users and credentials; Redis stores JWT invalidation and rate-limit data. Every JWT includes a unique jti, exp, and credential-version claim. Logout stores the jti in Redis until its expiration, and authentication rejects a token with an active invalidation entry or a credential-version mismatch.
 
 ### Session validity
 
-A protected request is authenticated once at entry. The security layer verifies the JWT signature, expiration, and Redis invalidation entry, then loads the current user status. Only ACTIVE users may proceed to business logic; BLOCKED and DEACTIVATED users receive 403 ACCESS_DENIED. Login does not issue tokens to non-active users.
+A protected request is authenticated once at entry. The security layer verifies the JWT signature, expiration, and Redis invalidation entry, then loads the current user status and credential version. The JWT credential-version claim must match the current user value; a mismatch, caused by a completed password reset, returns 401 UNAUTHENTICATED. Only ACTIVE users may proceed to business logic; BLOCKED and DEACTIVATED users receive 403 ACCESS_DENIED. Login does not issue tokens to non-active users.
 
 A request authenticated before its JWT expires may finish normally even if expiration occurs during its database transaction. A later retry with an expired token is rejected and requires authentication again.
 
@@ -71,7 +71,7 @@ With the failure simulator disabled, a repeatable 50-concurrent-request load tes
 
 ### Database migrations
 
-Liquibase owns versioned PostgreSQL schema migrations, including tables, constraints, indexes, and database-level checks. JPA/Hibernate validates and uses the resulting schema; it does not generate or alter the schema outside local experimentation. Testcontainers integration tests apply the same Liquibase migrations to a fresh PostgreSQL database.
+Liquibase owns versioned PostgreSQL schema migrations, including tables, constraints, indexes, and database-level checks. JPA/Hibernate validates and uses the resulting schema; it does not generate or alter the schema outside local experimentation. Testcontainers integration tests apply the same Liquibase migrations to a fresh PostgreSQL database and use a pinned, isolated Redis Testcontainer for authentication, logout, and later rate-limit tests.
 
 ### Integration quality
 
@@ -101,6 +101,7 @@ A normalized document number is additionally protected with an HMAC-SHA-256 look
 | role | varchar(20) | not null; `MANAGER` or `CUSTOMER` | Access role |
 | username | varchar(32) | not null; unique; lowercase 3 to 32 character username format | Login name; manager-assigned for customers |
 | password_hash | varchar(255) | not null; BCrypt hash | Salted one-way password hash |
+| credential_version | integer | not null; default 0; incremented on password reset | Must match the JWT credential-version claim |
 | first_name | varchar(100) | not null | First name |
 | middle_name | varchar(100) | nullable | Middle name |
 | last_name | varchar(100) | not null | Last name |
@@ -165,6 +166,8 @@ Managers may create and manage customer records, accounts, statuses, and daily l
 | deactivated_at | timestamptz | nullable | Deactivation time |
 
 Customer status cascades are deliberately conservative. Blocking a customer blocks every non-deactivated account. Unblocking a customer restores no accounts automatically; a manager must explicitly unblock each eligible account. Deactivating a customer permanently deactivates every non-deactivated account.
+
+Customer lifecycle changes use a shared locking protocol. A customer block or deactivation locks the customer row first, then locks affected account rows by ascending internal account ID before changing them. Account creation locks the customer row before checking that it is ACTIVE. Account unblocking identifies its owner, locks that customer row first, then locks and re-reads the account before checking both states. These workflows therefore serialize: an account cannot be created or restored as ACTIVE after a customer block or deactivation commits.
 
 ### Transactions
 
@@ -266,7 +269,7 @@ This generic record supports non-money requests that can create resources or hav
 | --- | --- | --- | --- |
 | id | bigserial | primary key | Internal identifier |
 | actor_user_id | bigint | not null; FK users.id | Authenticated actor who made the request |
-| operation | varchar(100) | not null | API operation, such as CUSTOMER_CREATE or DAILY_LIMIT_UPDATE |
+| operation | varchar(100) | not null | API operation, such as CUSTOMER_CREATE, CUSTOMER_PASSWORD_RESET, or DAILY_LIMIT_UPDATE |
 | resource_scope | varchar(255) | not null | Scope affected by the operation, such as customers or account number |
 | idempotency_key | uuid | not null; UUID v4 | Client-generated request key |
 | request_hash | varchar(64) | not null | Normalized request hash used to reject changed retries |
@@ -345,9 +348,11 @@ Redis removes JWT invalidation entries through their expiry TTL. If the applicat
 
 ## REST API
 
-All endpoints use JSON and are versioned under /api/v1. A client may supply X-Correlation-Id as a UUID. When supplied, the service preserves that identifier unchanged in logs, response headers, response bodies, and downstream calls. When the header is absent, the service generates a UUID. An invalid correlation identifier is rejected with 400 VALIDATION_ERROR. Timestamps use ISO 8601 UTC strings. Money amounts are decimal strings with up to four fractional digits.
+All endpoints use JSON and are versioned under /api/v1. A client may supply X-Correlation-Id as a UUID. When supplied, the service preserves that identifier unchanged in logs, response headers, response bodies, and downstream calls. When the header is absent, the service generates a UUID. An invalid correlation identifier is rejected with 400 VALIDATION_ERROR. Its error response has "correlationId": null, omits the X-Correlation-Id response header, and never echoes the malformed value. Timestamps use ISO 8601 UTC strings. Money amounts are decimal strings with up to four fractional digits.
 
-All endpoints accept the optional X-Correlation-Id UUID header. Protected endpoints require the Authorization: Bearer JWT header. No response returns a password, password hash, identity-document number, document lookup hash, or encryption material. Password creation and reset occur only through the manager-assisted secure branch terminal flow; there is no standalone public password-reset endpoint.
+All endpoints accept the optional X-Correlation-Id UUID header. Protected endpoints require the Authorization: Bearer JWT header. No response returns a password, password hash, identity-document number, document lookup hash, or encryption material. Password creation and reset occur through the manager-assisted secure branch terminal flow. The manager-only password-reset endpoint is an API for that assumed terminal client; there is no customer self-service or unauthenticated reset route. A completed reset increments the user's credential version and invalidates every previously issued JWT for that user.
+
+Each password reset locks the corresponding user row. In the same database transaction, it writes the new BCrypt hash and the incremented credential version together. Distinct reset requests for the same user therefore serialize; an idempotent replay returns its stored outcome without another credential change.
 
 ### Authentication
 
@@ -370,6 +375,7 @@ All endpoints accept the optional X-Correlation-Id UUID header. Protected endpoi
 | GET /api/v1/customers/{customerId} | Retrieves one customer profile for a manager. |
 | PATCH /api/v1/customers/{customerId} | Updates the mutable details of a customer profile. |
 | PATCH /api/v1/customers/{customerId}/status | Blocks, unblocks, or permanently deactivates a customer. Blocking and deactivation cascade to accounts; unblocking does not. |
+| POST /api/v1/customers/{customerId}/password-reset | Resets a customer password through the manager-assisted secure branch-terminal flow and invalidates existing customer JWTs. |
 
 Customer endpoints are for managers. Customer response bodies omit the identity-document number; managers may receive document type, issuing country, and expiry date only.
 
@@ -380,6 +386,7 @@ Customer endpoints are for managers. Customer response bodies omit the identity-
 | GET /api/v1/customers/{customerId} | Manager | Authorization: Bearer JWT | None | None | 200: {<br>&nbsp;&nbsp;"data": { "customerId": 42, "username": "alice", "firstName": "Alice", "lastName": "Example", "dateOfBirth": "1990-01-01", "email": "alice@example.test", "phoneNumber": "+381601234567", "residentialAddress": { "country": "RS", "city": "Belgrade", "postalCode": "11000", "line1": "Example 1" }, "identityDocument": { "type": "PASSPORT", "issuingCountry": "RS", "expiresOn": "2030-01-01" }, "timezone": "Europe/Belgrade", "status": "ACTIVE" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND |
 | PATCH /api/v1/customers/{customerId} | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>If-Match: customer-vN | None | Partial mutable customer profile, for example:<br>{<br>&nbsp;&nbsp;"phoneNumber": "+381601234568",<br>&nbsp;&nbsp;"residentialAddress": { "country": "RS", "city": "Novi Sad", "postalCode": "21000", "line1": "Example 2" }<br>} | 200: updated customer response | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED |
 | PATCH /api/v1/customers/{customerId}/status | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>If-Match: customer-vN | None | { "status": "BLOCKED" }<br>Allowed transitions: ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED. | 200: {<br>&nbsp;&nbsp;"data": { "customerId": 42, "status": "BLOCKED" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 412 PRECONDITION_FAILED; 428 PRECONDITION_REQUIRED; 409 INVALID_STATUS_TRANSITION |
+| POST /api/v1/customers/{customerId}/password-reset | Manager | Authorization: Bearer JWT<br>Content-Type: application/json<br>Idempotency-Key: UUID v4 | None | { "newPassword": "DemoPass123!" } | 200: {<br>&nbsp;&nbsp;"data": { "customerId": 42, "status": "PASSWORD_RESET" },<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} | 400 VALIDATION_ERROR; 401 UNAUTHENTICATED; 403 ACCESS_DENIED; 404 RESOURCE_NOT_FOUND; 409 IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS |
 
 ### Account management and history
 
@@ -452,6 +459,7 @@ The API applies a control that matches the operation type. An idempotency replay
 | Operation | Required request headers | Server behavior |
 | --- | --- | --- |
 | POST /customers | Idempotency-Key: UUID v4 | Uses generic request idempotency scoped to the manager and customer-creation operation. |
+| POST /customers/{customerId}/password-reset | Idempotency-Key: UUID v4 | Uses generic request idempotency scoped to the manager, customer, and password-reset operation. It locks the user row and writes the password hash and credential version together. |
 | POST /customers/{customerId}/accounts | Idempotency-Key: UUID v4 | Uses generic request idempotency scoped to the manager, customer, and account-creation operation. |
 | PATCH /customers/{customerId} and /status | If-Match: customer-vN | Uses the customer version. A successful update increments the version and returns the next ETag. |
 | PATCH /accounts/{accountNumber}/daily-limits | Idempotency-Key: UUID v4 and If-Match: account-vN | Uses generic request idempotency and the account management version in one database transaction. |
@@ -467,13 +475,15 @@ GET customer and account detail responses return ETag headers based on their cor
 | Success | Any 2xx status | {<br>&nbsp;&nbsp;"data": {},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
 | Error | Any 4xx or 5xx status | {<br>&nbsp;&nbsp;"error": {<br>&nbsp;&nbsp;&nbsp;&nbsp;"code": "STABLE_CODE",<br>&nbsp;&nbsp;&nbsp;&nbsp;"message": "Safe message",<br>&nbsp;&nbsp;&nbsp;&nbsp;"fieldErrors": [ { "field": "amount", "code": "POSITIVE_REQUIRED", "message": "Must be positive" } ]<br>&nbsp;&nbsp;},<br>&nbsp;&nbsp;"correlationId": "uuid"<br>} |
 
+A malformed supplied X-Correlation-Id is the sole response-envelope exception: its 400 VALIDATION_ERROR body contains "correlationId": null and its response omits the X-Correlation-Id header. The service never echoes the malformed value.
+
 An error object has the following fields: code, message, and optional fieldErrors. Each fieldErrors item contains field, code, and message. Error messages must be safe for clients and must not reveal credentials, tokens, internal implementation details, or whether an unknown username exists.
 
 ### Idempotency keys
 
 | Aspect | Contract |
 | --- | --- |
-| Applies to | Required for money operations, customer creation, account creation, and daily-limit updates. Other current endpoints rely on their idempotent desired-state semantics or ETag preconditions. |
+| Applies to | Required for money operations, customer creation, manager-assisted password reset, account creation, and daily-limit updates. Other current endpoints rely on their idempotent desired-state semantics or ETag preconditions. |
 | Header format | Idempotency-Key is a client-generated UUID v4. |
 | Money-operation scope | Customer, source account or deposit target account, and operation type. |
 | Generic-request scope | Authenticated actor, API operation, resource scope, and idempotency key. |
