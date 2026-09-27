@@ -192,7 +192,7 @@ The deterministic account-lock order prevents opposite-direction transfer deadlo
 
 ### API request idempotency records
 
-This generic record supports non-money requests that can create resources or have a retry-sensitive side effect. Money operations continue to use the dedicated idempotency records above. A new record starts as IN_PROGRESS. A matching request while it remains IN_PROGRESS returns 409 REQUEST_IN_PROGRESS; a completed record replays its stored final response. Expired records are removed by cleanup, so an abandoned reservation cannot block a key indefinitely.
+This generic record supports non-money requests that can create resources or have a retry-sensitive side effect. Money operations continue to use the dedicated idempotency records above.
 
 | Field | Type | Constraints | Description |
 | --- | --- | --- | --- |
@@ -209,6 +209,14 @@ This generic record supports non-money requests that can create resources or hav
 | created_at | timestamptz | not null | Creation time |
 | updated_at | timestamptz | not null | Last state change |
 | (actor_user_id, operation, resource_scope, idempotency_key) | - | unique | Generic idempotency scope |
+
+### Idempotency execution and crash behavior
+
+Both idempotency tables use the same atomic-completion model. In one PostgreSQL transaction, the service creates the record as IN_PROGRESS, performs the protected side effect, and stores the final status and response data. It commits that work before attempting to send the HTTP response. IN_PROGRESS is therefore transient; only a completed or failed money-operation record, or a completed generic-request record, is durable.
+
+A concurrent matching request waits on the unique idempotency constraint while the first transaction is open. After the first transaction commits, it re-reads the record and replays the final result. If the configured database lock timeout is reached first, it returns 409 REQUEST_IN_PROGRESS. A matching request after a rollback can proceed because neither the side effect nor the idempotency record was committed.
+
+If the commit succeeds but the HTTP response is lost, a retry finds the final record and replays the stored status and response data. A process crash before commit leaves no durable side effect or abandoned IN_PROGRESS record. Cleanup removes only finalized records after the retention period; it is not a crash-recovery mechanism.
 
 ### Audit events
 
@@ -260,9 +268,9 @@ This durable aggregate is updated in the same database transaction as the money 
 
 Daily limits are evaluated, not restored by a midnight job. At each limit check and account-detail read, the service converts the current time to the customer timezone and uses the override for that local date only when it has not expired. Otherwise, it uses the configured default limit. An overdue cleanup run therefore cannot leave a temporary limit effective.
 
-A scheduled maintenance job runs hourly. It deletes expired account-limit overrides and expired records from both idempotency tables in small batches. Each expiring table has an expires_at index, and daily-limit usage has a usage_date index. The job may delete daily-limit usage aggregates older than a configurable retention period; immutable transactions, transaction entries, and audit events are never removed by this cleanup.
+A scheduled maintenance job runs hourly. It deletes expired account-limit overrides and expired finalized records from both idempotency tables in small batches. Each expiring table has an expires_at index, and daily-limit usage has a usage_date index. The job may delete daily-limit usage aggregates older than a configurable retention period; immutable transactions, transaction entries, and audit events are never removed by this cleanup.
 
-Redis removes JWT invalidation entries through their expiry TTL. If the application later runs on multiple instances, a PostgreSQL advisory lock ensures that only one instance runs a cleanup cycle. Cleanup delay is harmless: expired overrides are ignored by business logic, while expired idempotency records remain unavailable only until cleanup completes.
+Redis removes JWT invalidation entries through their expiry TTL. If the application later runs on multiple instances, a PostgreSQL advisory lock ensures that only one instance runs a cleanup cycle. Cleanup delay is harmless: expired overrides are ignored by business logic, while expired idempotency keys remain reserved until cleanup completes.
 
 
 ## REST API
@@ -401,7 +409,7 @@ An error object has the following fields: code, message, and optional fieldError
 | Generic-request scope | Authenticated actor, API operation, resource scope, and idempotency key. |
 | Replay | A repeat request with the same scope and normalized request body returns the stored final HTTP status and response data. The service builds the response envelope with the retry request correlationId. |
 | Conflict | A repeat key in the same scope with a different request body returns 409 IDEMPOTENCY_CONFLICT. |
-| Concurrent request | While the first request is in progress, a matching repeat request returns 409 REQUEST_IN_PROGRESS. |
+| Concurrent request | A matching repeat waits for the first transaction, then replays its result. If the configured database lock timeout is reached first, it returns 409 REQUEST_IN_PROGRESS. |
 | Retention | Records expire after the configurable idempotency retention period. |
 
 ### Internal service codes
