@@ -4,6 +4,12 @@
 
 The service is a modular monolith. Domain-driven design principles establish clear boundaries between domain areas; they do not imply a future microservice split.
 
+## Scope and deliberate non-goals
+
+This service is an interview-demo simulation of online-banking operations. It supports authenticated manager and customer workflows, EUR and USD accounts, simulated deposits and withdrawals, same-currency internal transfers, daily limits, account history, auditing, and failure/idempotency behavior.
+
+The service does not integrate with payment networks, cash systems, FX providers, or notification providers. Deposits and withdrawals are simulated operations with notional external counterparties. It does not implement currency conversion, fees, interest, overdrafts, pending settlement states, a full double-entry general ledger, or durable notification delivery. Customers cannot self-service onboarding, profile management, or account creation. These are deliberate non-goals, not incomplete features.
+
 Code is organized by domain area:
 
 1. Tarbank Core
