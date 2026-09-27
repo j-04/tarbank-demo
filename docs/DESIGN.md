@@ -77,6 +77,12 @@ A normalized document number is additionally protected with an HMAC-SHA-256 look
 | --- | --- | --- | --- |
 | user_id | bigint | primary key; FK users.id; users.role must be `MANAGER`; validated by service | Manager profile |
 
+Managers are seeded at application startup; manager creation, reassignment, and portfolio administration have no REST API in this demo. A manager is a bank-staff principal, not a banking customer.
+
+Every ACTIVE manager may use manager endpoints for every customer and account. The customers.manager_id relationship records onboarding and relationship responsibility only; it is set to the creating manager and does not restrict another manager access. A later manager action does not change that relationship.
+
+Managers may create and manage customer records, accounts, statuses, and daily limits. They cannot use customer-only money-operation endpoints or act as an account owner. Every manager action is recorded with the acting manager in the audit trail.
+
 ### Customers
 
 | Field | Type | Constraints | Description |
@@ -96,7 +102,7 @@ A normalized document number is additionally protected with an HMAC-SHA-256 look
 | document_number_hash | char(64) | not null; HMAC-SHA-256 lookup hash | Used to detect duplicate identity documents |
 | document_expires_on | date | nullable; if present, must be valid at customer creation; validated by service | Identity-document expiry date |
 | timezone | varchar(64) | not null; immutable after customer creation | IANA timezone used for daily limits |
-| manager_id | bigint | nullable; FK managers.user_id | Manager responsible for the customer |
+| manager_id | bigint | not null; FK managers.user_id; set at creation | Responsible relationship manager; not an authorization boundary |
 | version | integer | not null; default 0; incremented on profile or status changes | Source for the customer ETag |
 | status_changed_by_manager_id | bigint | nullable; FK managers.user_id | Manager who last changed customer status |
 | status_changed_at | timestamptz | nullable | Time of the last customer status change |
