@@ -416,13 +416,71 @@ This is the highest-risk implementation phase. It delivers correctly persisted s
 - [ ] The money service exposes no customer-visible notification, history, temporary-override, or rate-limiting feature yet.
 - [ ] Commit the completed checkpoint with a message such as implement atomic money operations.
 
-## 7. Add concurrency and failure tests before extending money features
+## 7. Prove concurrency, idempotency, and persistence safety
 
-- Test concurrent withdrawals from one account, concurrent transfers, and opposite-direction transfers.
-- Test insufficient funds, blocked accounts, owner checks, same-key concurrent requests, and key reuse with different input.
-- Add balance-reconciliation tests that compare every stored account balance with the sum of its transaction-entry deltas.
+This phase verifies the money-operation core against real PostgreSQL behavior. It uses deterministic integration tests rather than mocks or H2, because row locking, isolation, upserts, and constraint timing are the behaviors under test. The configurable demo failure simulator itself remains phase 9.
 
-**Checkpoint:** concurrency, idempotency, and reconciliation tests pass reliably against PostgreSQL.
+### 7.1 Build deterministic concurrent-test support
+
+- [ ] Run concurrency tests against the PostgreSQL Testcontainers setup from phase 2, not against an in-memory database.
+- [ ] Create active customers and accounts through fixtures with explicit balances, currencies, and timezones.
+- [ ] Give every concurrent task its own application transaction and persistence context. Do not wrap the whole test in one transaction.
+- [ ] Coordinate competing requests with latches or barriers so they reach the intended lock point together.
+- [ ] Set a bounded database lock timeout and test-executor timeout so a deadlock or blocked test fails clearly instead of hanging the build.
+- [ ] Inject a fixed clock and known customer-local timezone when a test depends on the daily usage date.
+- [ ] Query PostgreSQL after all tasks finish; assert durable rows and balances rather than only service return values.
+
+### 7.2 Prove balance and account-lock correctness
+
+- [ ] Run two withdrawals from the same account whose combined amount exceeds its balance. Assert that at most one completes and the final balance never becomes negative.
+- [ ] Run a withdrawal and a transfer from the same source account whose combined amount exceeds its balance. Assert that locking serializes the balance check and permits only valid outcomes.
+- [ ] Run concurrent deposits into the same account and assert that all successful deltas appear once and the stored balance equals their sum.
+- [ ] Run two transfers in opposite directions between the same accounts. Assert that both complete when funds allow and that deterministic ascending account-ID locking prevents a deadlock.
+- [ ] Run concurrent transfers sharing a destination account and verify each successful transfer writes a correct destination balance_after value.
+- [ ] Exercise a money operation racing with an account status change. Assert that the row locks yield one serial order and no completed movement uses an inactive account state.
+
+### 7.3 Prove daily-usage concurrency
+
+- [ ] Start concurrent first withdrawals or transfers for the same account, operation type, and local date when no daily-usage row exists.
+- [ ] Assert that exactly one usage row is created and that its used amount equals the sum of successful operations.
+- [ ] Run competing operations whose combined amount exceeds the default limit. Assert that no combination of successful requests exceeds the configured limit.
+- [ ] Verify withdrawal and transfer usage are separate aggregates and do not consume one another's limits.
+- [ ] Verify a deposit neither creates nor changes a daily-usage row.
+- [ ] Repeat the daily-limit cases across a customer-local midnight boundary using the fixed clock to prove the date key, not server-local time, controls usage.
+
+### 7.4 Prove financial idempotency under races and retries
+
+- [ ] Submit the same money request concurrently with the same idempotency key. Assert that exactly one transaction and its entries are written and that every caller receives the same final result or the documented in-progress response.
+- [ ] Submit the same key with different normalized input. Assert that the request is rejected with IDEMPOTENCY_CONFLICT and does not alter the original operation.
+- [ ] Retry a completed successful operation after its account balance and version have changed. Assert that the stored result is replayed rather than applying another movement.
+- [ ] Retry a failed business operation with the same key. Assert that its recorded failure is replayed and that no entries or usage are created.
+- [ ] Verify that a failed transaction rollback removes an uncommitted idempotency reservation so a later valid first attempt can proceed.
+- [ ] Defer the explicit post-commit response-loss simulation to phase 9, where the FailureSimulator supplies a controlled injection point.
+
+### 7.5 Prove transaction and ledger invariants
+
+- [ ] Assert that every completed deposit has one positive entry and every completed withdrawal has one negative entry with the correct balance_after.
+- [ ] Assert that every completed transfer has exactly two entries, equal absolute deltas, opposite signs, and a zero sum.
+- [ ] Assert that every failed business transaction has a failure code, audit event, and final idempotency outcome, but no entry, balance change, or daily-usage update.
+- [ ] Assert that malformed, unauthenticated, and unauthorized requests leave no transaction record.
+- [ ] Run a reconciliation query independent of application balance-maintenance code: for every account, balance equals COALESCE(SUM(transaction_entries.amount_delta), 0).
+- [ ] Verify transaction entries and audit events are never modified or deleted by application repositories or services.
+
+### 7.6 Test rollback behavior without the demo simulator
+
+- [ ] Use a controlled test-only exception inside the money-operation transaction after records have been staged but before commit.
+- [ ] Assert that the database rolls back transaction, entries, balances, daily usage, audit event, and idempotency record together.
+- [ ] Verify that a later retry with the same key can proceed after that rollback.
+- [ ] Keep this test seam test-only. The configurable before-transaction, before-commit, and after-commit simulator behavior belongs to phase 9.
+
+### Completion checklist
+
+- [ ] The concurrent tests are repeatable against PostgreSQL and have bounded execution time.
+- [ ] No test demonstrates a negative balance, limit overrun, duplicate usage row, duplicate transaction, or opposite-direction transfer deadlock.
+- [ ] Financial idempotency returns exactly one durable outcome for a matching request key.
+- [ ] Reconciliation proves every stored account balance matches its immutable entry history after successful, failed, and concurrent operations.
+- [ ] Transaction rollback leaves no partial money state.
+- [ ] Commit the completed checkpoint with a message such as verify money-operation concurrency.
 
 ## 8. Complete daily-limit configuration and account history
 
