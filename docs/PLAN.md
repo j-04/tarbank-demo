@@ -264,11 +264,67 @@ This phase completes the manager-controlled lifecycle after onboarding: safe pro
 
 ## 5. Implement account lifecycle management
 
-- Build the public account lifecycle on the account persistence baseline from phase 4; add account-number generation and EUR/USD constraints.
-- Implement manager account creation, account retrieval, status changes, daily-limit updates, ETags, and audits.
-- Enforce customer-status cascades to accounts and customer ownership for customer-visible account endpoints.
+This phase exposes the account lifecycle built on the persistence baseline introduced in phase 4. It creates zero-balance EUR and USD accounts, provides safe manager and owner reads, and completes account-level status management. Daily-limit overrides and money operations remain later phases.
 
-**Checkpoint:** a manager can create and manage zero-balance accounts; a customer can access only their own accounts.
+### 5.1 Complete the account model and account-number generation
+
+- [ ] Complete the account migration with the unique immutable public account number, EUR/USD currency constraint, numeric(19,4) zero-balance default, non-negative balance check, and required manager and status metadata.
+- [ ] Add a database check that enforces the public account-number shape: TB followed by exactly 14 digits.
+- [ ] Use a database-backed sequence to reserve the numeric portion of an account number and left-pad it to 14 digits. Sequence gaps after a rolled-back creation are acceptable; duplicate numbers are not.
+- [ ] Keep the public account number immutable and separate from the internal account ID.
+- [ ] Model currency and account status as explicit enums. Never accept a client-provided balance, account number, lifecycle metadata, or management version.
+- [ ] Keep balance updates out of the account management-version mechanism; money operations will lock and update balances in phase 6.
+
+### 5.2 Implement manager account creation
+
+- [ ] Define the POST /api/v1/customers/{customerId}/accounts request and safe response DTOs.
+- [ ] Require an ACTIVE manager, a UUID v4 Idempotency-Key, and a target customer that is ACTIVE.
+- [ ] Accept only EUR or USD and create the account with balance 0.0000 and ACTIVE status.
+- [ ] In one database transaction, reserve the generic idempotency record, generate and persist the account, record the creating manager, write an ACCOUNT_CREATED audit event, and finalize the replay response.
+- [ ] Scope account-creation idempotency to the manager, customer, and account-creation operation. Replay an identical completed request without creating another account; reject conflicting reuse or a concurrent in-progress request as defined by the generic idempotency policy.
+- [ ] Do not expose customer account creation, account-number choice, currency changes, or starting-balance input.
+
+### 5.3 Implement account lists and safe detail reads
+
+- [ ] Add manager-only GET /api/v1/customers/{customerId}/accounts with bounded cursor pagination and the safe account-summary contract.
+- [ ] Add customer-only GET /api/v1/accounts that lists every account owned by the authenticated customer, including its lifecycle status.
+- [ ] Use a stable account-list ordering and opaque cursor based on the last returned account position.
+- [ ] Add GET /api/v1/accounts/{accountNumber} for the account-owning customer or any ACTIVE manager.
+- [ ] Enforce customer ownership in the service, not only in the controller. A customer must not read another customer's account.
+- [ ] Return the current balance, currency, status, and account ETag in the account-vN form. Do not return internal account IDs or manager-only audit metadata.
+- [ ] Return configured default withdrawal and transfer limits in the account detail response with null expiresAt values until phase 8 adds effective temporary overrides.
+- [ ] Defer account-history reads until transaction entries exist in phase 8.
+
+### 5.4 Implement account status management
+
+- [ ] Define PATCH /api/v1/accounts/{accountNumber}/status as a manager-only operation that requires If-Match: account-vN.
+- [ ] Allow only ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED.
+- [ ] Reject every other transition, including DEACTIVATED reactivation, with 409 INVALID_STATUS_TRANSITION.
+- [ ] Permit an account unblock only when its customer is ACTIVE. A manager must explicitly unblock each eligible account after its customer is restored.
+- [ ] Use one transaction to verify the account and customer state, apply a valid transition, increment management_version once, and record the manager and timestamp.
+- [ ] Write an ACCOUNT_STATUS_CHANGED audit event with old and new status, acting manager, target account, and correlation ID.
+- [ ] Keep customer-level cascade behavior in phase 4 as the single owner of a customer-driven account status change; do not duplicate it in the account controller.
+
+### 5.5 Test the account lifecycle slice
+
+- [ ] Test account-number format, uniqueness, immutability, and concurrent account creation.
+- [ ] Test supported currencies, zero balance, and rejection of unsupported currency or client-provided balance data.
+- [ ] Test manager creation authorization, rejection for blocked or deactivated customers, and customer inability to create an account.
+- [ ] Test account-creation idempotency for completed replay, conflicting reuse, and concurrent matching requests.
+- [ ] Test manager and owner account lists, detail ownership checks, pagination validation, and safe response fields.
+- [ ] Test account ETag generation, missing and stale If-Match behavior, every valid and invalid account transition, and the active-customer rule for unblocking.
+- [ ] Test that account status changes and audit events commit or roll back together.
+- [ ] Test that account detail reports configured default daily limits without creating an override record.
+
+### Completion checklist
+
+- [ ] A manager can create a zero-balance EUR or USD account for an ACTIVE customer through the documented idempotent API.
+- [ ] Account numbers are unique, immutable, and match the TB plus 14-digit format.
+- [ ] Managers can read any account; customers can read only their own accounts.
+- [ ] Account status transitions use ETags, are audited, and cannot reactivate a deactivated account.
+- [ ] Customer status rules and account status rules work together without automatic account restoration on customer unblock.
+- [ ] No money movement or daily-limit override behavior is implemented in this phase.
+- [ ] Commit the completed checkpoint with a message such as implement account lifecycle management.
 
 ## 6. Implement the money-operation core
 
