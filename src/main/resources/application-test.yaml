@@ -1,0 +1,26 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+tarbank:
+  database:
+    url: jdbc:postgresql://localhost:5432/tarbank_test
+    username: tarbank_test
+    password: test-only-password
+  redis:
+    host: localhost
+    port: 6379
+    password: test-only-password
+  jwt:
+    issuer: tarbank-test
+    signing-key: test-only-jwt-signing-key-must-not-be-used-outside-tests
+  document-protection:
+    key-version: v1
+    encryption-key: test-only-document-encryption-key-must-not-be-used-outside-tests
+    lookup-hmac-key: test-only-document-lookup-hmac-key-must-not-be-used-outside-tests
+  manager-seed:
+    managers:
+      - username: manager
+        password: TestPass123!
+        first-name: Test
+        last-name: Manager

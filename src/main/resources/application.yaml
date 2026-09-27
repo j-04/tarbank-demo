@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: tarbank
+  datasource:
+    url: ${tarbank.database.url}
+    username: ${tarbank.database.username}
+    password: ${tarbank.database.password}
+    hikari:
+      pool-name: tarbank-postgresql-pool
+  data:
+    redis:
+      host: ${tarbank.redis.host}
+      port: ${tarbank.redis.port}
+      password: ${tarbank.redis.password}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.xml
+
+management:
+  server:
+    address: 127.0.0.1
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,redis
+
+tarbank:
+  database:
+    url: ${TARBANK_DATABASE_URL}
+    username: ${TARBANK_DATABASE_USERNAME}
+    password: ${TARBANK_DATABASE_PASSWORD}
+  redis:
+    host: ${TARBANK_REDIS_HOST}
+    port: ${TARBANK_REDIS_PORT:6379}
+    password: ${TARBANK_REDIS_PASSWORD}
+  jwt:
+    issuer: tarbank
+    signing-key: ${TARBANK_JWT_SIGNING_KEY}
+    access-token-ttl: PT1H
+  document-protection:
+    key-version: v1
+    encryption-key: ${TARBANK_DOCUMENT_ENCRYPTION_KEY}
+    lookup-hmac-key: ${TARBANK_DOCUMENT_LOOKUP_HMAC_KEY}
+  manager-seed:
+    managers:
+      - username: ${TARBANK_MANAGER_USERNAME}
+        password: ${TARBANK_MANAGER_PASSWORD}
+        first-name: ${TARBANK_MANAGER_FIRST_NAME}
+        last-name: ${TARBANK_MANAGER_LAST_NAME}

@@ -10,62 +10,62 @@ This phase creates a reproducible, containerized application shell. It deliberat
 
 ### 1.1 Create the build
 
-- [ ] Create a Maven-based Spring Boot project targeting Java 25.
-- [ ] Pin the Java, Spring Boot, and plugin versions in the build configuration.
-- [ ] Add only the initial dependencies needed to start the service: Spring Web, Validation, Actuator, Security, Data JPA, Data Redis, PostgreSQL, Liquibase, Log4j, and test support.
-- [ ] Create a valid, empty Liquibase master changelog and enable it at startup so the phase-1 application checkpoint can run before domain migrations exist.
-- [ ] Configure the build to use Log4j rather than the default logging implementation.
-- [ ] Add a minimal application class and verify that the project compiles and its unit-test task runs.
+- [x] Create a Gradle-based Spring Boot project targeting Java 25.
+- [x] Pin the Java, Spring Boot, and plugin versions in the build configuration.
+- [x] Add only the initial dependencies needed to start the service: Spring Web, Validation, Actuator, Security, Data JPA, Data Redis, PostgreSQL, Liquibase, Log4j, and test support.
+- [x] Create a valid, empty Liquibase master changelog and enable it at startup so the phase-1 application checkpoint can run before domain migrations exist.
+- [x] Configure the build to use Log4j rather than the default logging implementation.
+- [x] Add a minimal application class and verify that the project compiles and its unit-test task runs.
 
 ### 1.2 Establish the package layout
 
-- [ ] Use one root package, for example com.tarbank, so Spring component scanning is predictable.
-- [ ] Create top-level packages for common, security, customer, account, and money.
-- [ ] Within each domain package, reserve api, application, domain, and persistence subpackages. Create implementation classes only when their phase needs them.
-- [ ] Keep cross-cutting HTTP error handling, correlation-ID handling, configuration, and shared API models in common; do not put banking business logic there.
+- [x] Use one root package, for example com.tarbank, so Spring component scanning is predictable.
+- [x] Create top-level packages for common, security, customer, account, and money.
+- [x] Within each domain package, reserve api, application, domain, and persistence subpackages. Create implementation classes only when their phase needs them.
+- [x] Keep cross-cutting HTTP error handling, correlation-ID handling, configuration, and shared API models in common; do not put banking business logic there.
 
 ### 1.3 Define bootstrap configuration
 
-- [ ] Add separate local and test application profiles.
-- [ ] Bind database, Redis, JWT, encryption-key, and manager-seed settings through typed configuration properties.
-- [ ] Validate required configuration on startup and fail safely with an actionable message when a required setting is absent.
-- [ ] Add an .env.example file that names required local settings without containing real secrets.
-- [ ] Keep actual passwords, JWT signing keys, and document-encryption keys out of source control.
+- [x] Add separate local and test application profiles.
+- [x] Bind database, Redis, JWT, encryption-key, and manager-seed settings through typed configuration properties.
+- [x] Validate required configuration on startup and fail safely with an actionable message when a required setting is absent.
+- [x] Add an .env.example file that names required local settings without containing real secrets.
+- [x] Keep actual passwords, JWT signing keys, and document-encryption keys out of source control.
 
 ### 1.4 Add common HTTP behavior
 
-- [ ] Define the standard API error envelope with HTTP status, stable public error code, safe message, correlation ID, and optional field errors.
-- [ ] Keep internal TAR-AREA-NNN codes only in structured logs and support diagnostics; never include them in an API response.
-- [ ] Add global exception handling for malformed JSON, Bean Validation failures, unsupported methods, and unexpected errors.
-- [ ] Add a correlation-ID filter: preserve a valid client-supplied X-Correlation-Id; generate a UUID only when the header is absent; reject a supplied malformed value with 400 VALIDATION_ERROR.
-- [ ] Return the correlation ID in every response except a malformed supplied X-Correlation-Id: its error body has correlationId: null and its response omits X-Correlation-Id. Never echo the malformed value; make each accepted or generated ID available to structured logs.
-- [ ] Add tests that an absent correlation header receives a generated UUID in both the response header and body, while a malformed supplied header receives exactly 400 VALIDATION_ERROR, correlationId: null in the error body, no X-Correlation-Id response header, and no echo of the malformed value.
-- [ ] Do not add domain-specific error codes or authorization rules yet; add them with their owning feature.
+- [x] Define the standard API error envelope with HTTP status, stable public error code, safe message, correlation ID, and optional field errors.
+- [x] Keep internal TAR-AREA-NNN codes only in structured logs and support diagnostics; never include them in an API response.
+- [x] Add global exception handling for malformed JSON, Bean Validation failures, unsupported methods, and unexpected errors.
+- [x] Add a correlation-ID filter: preserve a valid client-supplied X-Correlation-Id; generate a UUID only when the header is absent; reject a supplied malformed value with 400 VALIDATION_ERROR.
+- [x] Return the correlation ID in every response except a malformed supplied X-Correlation-Id: its error body has correlationId: null and its response omits X-Correlation-Id. Never echo the malformed value; make each accepted or generated ID available to structured logs.
+- [x] Add tests that an absent correlation header receives a generated UUID in both the response header and body, while a malformed supplied header receives exactly 400 VALIDATION_ERROR, correlationId: null in the error body, no X-Correlation-Id response header, and no echo of the malformed value.
+- [x] Do not add domain-specific error codes or authorization rules yet; add them with their owning feature.
 
 ### 1.5 Containerize the local demo
 
-- [ ] Add a multi-stage Dockerfile that builds the application image with a pinned Java 25 base image.
-- [ ] Add a Compose service for the application, PostgreSQL, and Redis.
-- [ ] Put the services on an isolated Compose network; expose only the application port for local use.
-- [ ] Configure a named PostgreSQL volume so data survives a normal container restart.
-- [ ] Configure the application through environment variables or a local, ignored environment file; never bake secrets into the image.
-- [ ] Add health checks and service-start ordering appropriate for the application, PostgreSQL, and Redis.
+- [x] Add a multi-stage Dockerfile that builds the application image with a pinned Java 25 base image.
+- [x] Add a Compose service for the application, PostgreSQL, and Redis.
+- [x] Put the services on an isolated Compose network; expose only the application port for local use.
+- [x] Configure a named PostgreSQL volume so data survives a normal container restart.
+- [x] Configure the application through environment variables or a local, ignored environment file; never bake secrets into the image.
+- [x] Add health checks and service-start ordering appropriate for the application, PostgreSQL, and Redis.
 
 ### 1.6 Expose operational health
 
-- [ ] Configure Spring Actuator liveness and readiness endpoints for internal use.
-- [ ] Make readiness depend on PostgreSQL and Redis, because both are required by the design.
-- [ ] Verify that the application becomes ready only after both dependencies are available.
-- [ ] Keep a full metrics, tracing, rate-limiting, and dependency-failure implementation for phase 9.
+- [x] Configure Spring Actuator liveness and readiness endpoints for internal use.
+- [x] Make readiness depend on PostgreSQL and Redis, because both are required by the design.
+- [x] Verify that the application becomes ready only after both dependencies are available.
+- [x] Keep a full metrics, tracing, rate-limiting, and dependency-failure implementation for phase 9.
 
 ### Completion checklist
 
-- [ ] mvn test completes successfully from a clean checkout.
-- [ ] docker compose config validates the Compose configuration.
-- [ ] docker compose build creates the service image.
-- [ ] docker compose up starts the service, PostgreSQL, and Redis.
-- [ ] The liveness and readiness endpoints report healthy after startup.
-- [ ] No real secret is present in tracked files.
+- [x] gradle test completes successfully from a clean checkout.
+- [x] docker compose config validates the Compose configuration.
+- [x] docker compose build creates the service image.
+- [x] docker compose up starts the service, PostgreSQL, and Redis.
+- [x] The liveness and readiness endpoints report healthy after startup.
+- [x] No real secret is present in tracked files.
 - [ ] Commit the completed checkpoint with a message such as bootstrap application and compose runtime.
 
 ## 2. Establish database migrations and test infrastructure
