@@ -190,16 +190,81 @@ This is the first protected vertical slice. It creates the identity schema, star
 
 ## 4. Complete customer lifecycle management
 
-- Add customer update, block, and deactivate operations.
-- Enforce the 18-or-older rule, document-expiry validation, username and password rules, and immutable timezone policy.
-- Record every manager lifecycle action in the audit trail.
-- Ensure blocked or deactivated users cannot continue to use an already-issued token.
+This phase completes the manager-controlled lifecycle after onboarding: safe profile changes, password resets through the branch flow, and customer status changes. To make the required status cascade atomic, it brings forward the account persistence baseline only; public account management remains phase 5.
 
-**Checkpoint:** lifecycle changes are authorized, audited, and enforced immediately on protected requests.
+### 4.1 Add the account persistence dependency for lifecycle cascades
+
+- [ ] Add the accounts Liquibase changeset with the account owner, currency, balance, lifecycle status, status-change metadata, management version, and timestamps defined in the design.
+- [ ] Add the Account entity and repository methods needed to load a customer's non-deactivated accounts for a status change.
+- [ ] Add a repository method that locks the affected account rows before their statuses are changed.
+- [ ] Do not expose account creation, account detail, daily-limit, or account-status endpoints in this phase. Those remain phase 5.
+- [ ] Update phase 5 to build its public account lifecycle on this persistence baseline rather than creating a second account schema.
+
+### 4.2 Implement manager customer listing and safe reads
+
+- [ ] Add manager-only GET /api/v1/customers with bounded cursor pagination and an optional lifecycle-status filter.
+- [ ] Extend GET /api/v1/customers/{customerId} to return the current customer ETag in the customer-vN form.
+- [ ] Keep customer lists and detail responses limited to safe fields; never disclose document numbers, lookup hashes, ciphertext, passwords, or password hashes.
+- [ ] Keep manager authorization global as specified in the design: every ACTIVE manager may access every customer, without a portfolio restriction.
+- [ ] Return the documented validation, authentication, authorization, and not-found error contracts.
+
+### 4.3 Implement mutable profile updates
+
+- [ ] Define the PATCH /api/v1/customers/{customerId} request DTO for the documented mutable profile fields: names, email, phone number, and current residential address.
+- [ ] Reject changes to username, date of birth, timezone, identity-document data, manager relationship, role, and lifecycle status through this endpoint.
+- [ ] Require an If-Match customer-vN header. Reject an absent header with 428 PRECONDITION_REQUIRED and a stale header with 412 PRECONDITION_FAILED.
+- [ ] Load and update the customer in one transaction, increment the customer version exactly once, and return the next ETag.
+- [ ] Reapply contact, address, and format validation to partial updates. Keep the field-error response safe and specific enough for a caller to correct input.
+- [ ] Write a CUSTOMER_UPDATED audit event with the manager, customer, correlation ID, and safe change metadata. Do not store sensitive old or new values in audit metadata.
+
+### 4.4 Implement customer status transitions and account cascades
+
+- [ ] Define the PATCH /api/v1/customers/{customerId}/status DTO and allow only ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED.
+- [ ] Reject every other transition, including any reactivation of a DEACTIVATED customer, with 409 INVALID_STATUS_TRANSITION.
+- [ ] Require If-Match customer-vN and apply the transition in one transaction.
+- [ ] For a block operation, lock and block every non-deactivated account owned by the customer.
+- [ ] For an unblock operation, restore only the customer to ACTIVE. Do not automatically unblock any account.
+- [ ] For deactivation, lock and permanently deactivate every non-deactivated account. Never permit reversal.
+- [ ] Increment the customer version and every changed account management version. Record the acting manager and timestamp on each changed customer and account.
+- [ ] Write one CUSTOMER_STATUS_CHANGED audit event and one ACCOUNT_STATUS_CHANGED audit event for each affected account, with old and new statuses and the same correlation ID.
+- [ ] Use deterministic locking of the customer and affected account rows so this workflow remains safe when account-management endpoints arrive in phase 5.
+
+### 4.5 Implement the manager-assisted password-reset flow
+
+- [ ] Implement password reset as a manager-authorized branch-terminal operation, not a customer self-service or unauthenticated reset route.
+- [ ] Validate the replacement password using the same exactly-12-printable-character rule and username comparison used during onboarding.
+- [ ] BCrypt-hash the replacement password before persistence and ensure neither its value nor hash reaches a response, log, audit metadata, or exception.
+- [ ] Record a CUSTOMER_PASSWORD_RESET audit event with the acting manager and correlation ID, without sensitive metadata.
+- [ ] Add the restricted terminal/API contract to the API documentation before exposing the flow in the demo.
+
+### 4.6 Enforce lifecycle status in active sessions
+
+- [ ] Reuse the phase-3 per-request user-status lookup so a token issued before a customer is blocked or deactivated is rejected on its next protected request.
+- [ ] Do not attempt to cancel a request that was already authenticated and began its database transaction before the status change; it follows the established request-entry authentication policy.
+- [ ] Do not add a separate token-version scheme or bulk Redis invalidation for lifecycle changes; the current status check is the chosen enforcement mechanism.
+
+### 4.7 Test customer lifecycle behavior
+
+- [ ] Test customer listing, cursor and status-filter validation, safe read responses, and manager-only access.
+- [ ] Test successful profile updates, immutable-field rejection, missing ETag, stale ETag, and concurrent updates.
+- [ ] Test every allowed and forbidden customer-status transition.
+- [ ] Create accounts through repository fixtures and verify blocking and deactivation cascade atomically, while unblocking leaves account statuses unchanged.
+- [ ] Test that an already-issued customer token is denied on its next protected request after blocking or deactivation.
+- [ ] Test the manager-assisted password reset flow, including validation, BCrypt storage, authorization, and audit logging.
+- [ ] Test that customer, account, and audit changes roll back together if the transaction fails.
+
+### Completion checklist
+
+- [ ] Managers can list, retrieve, and safely update customers using the documented ETag contract.
+- [ ] Customer status transitions are authorized, optimistic-concurrency-safe, audited, and follow the allowed state machine.
+- [ ] Blocking and deactivation cascade to eligible accounts; unblocking does not restore accounts automatically.
+- [ ] A blocked or deactivated customer cannot use a previously issued token on a new protected request.
+- [ ] Password resets are manager-assisted, securely stored, and not public or self-service.
+- [ ] Commit the completed checkpoint with a message such as implement customer lifecycle management.
 
 ## 5. Implement account lifecycle management
 
-- Add the accounts migration, entity, repository, account-number generator, and EUR/USD constraints.
+- Build the public account lifecycle on the account persistence baseline from phase 4; add account-number generation and EUR/USD constraints.
 - Implement manager account creation, account retrieval, status changes, daily-limit updates, ETags, and audits.
 - Enforce customer-status cascades to accounts and customer ownership for customer-visible account endpoints.
 
