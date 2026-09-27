@@ -184,6 +184,16 @@ Money operations use PostgreSQL READ COMMITTED isolation with explicit row locks
 
 The deterministic account-lock order prevents opposite-direction transfer deadlocks. Locking before validation prevents concurrent withdrawals or transfers from both passing the same balance or daily-limit check.
 
+### Demo failure simulator
+
+A demo-only FailureSimulator port applies only to deposit, withdrawal, and transfer operations. The demo profile enables it with a default 15 percent independent failure chance per eligible operation. Configuration controls whether it is enabled, the failure rate, and the enabled injection points. When a failure is selected, the simulator selects one configured point; tests may force a specific point rather than use random selection.
+
+1. BEFORE_TRANSACTION: fail before persistence begins; no database state changes.
+2. DURING_TRANSACTION_BEFORE_COMMIT: throw after a configured point within the database transaction. PostgreSQL rolls back money, entries, balance projection, daily-limit usage, audit, and idempotency changes together.
+3. AFTER_COMMIT_BEFORE_RESPONSE: commit the successful operation and final idempotency record, then simulate response-delivery failure. A retry using the same idempotency key replays the committed result.
+
+The simulator is disabled in normal automated tests and production-like profiles. Tests explicitly enable it with a deterministic seed or forced injection point. Business-rule rejections, such as insufficient funds, retain their FAILED transaction record. Simulated infrastructure failures before commit leave no durable transaction record or side effect. Required simulator tests verify no partial state at each pre-commit point and verify that an after-commit response failure replays the single committed outcome for the same idempotency key.
+
 ### Idempotency records
 
 | Field | Type | Constraints | Description |
