@@ -121,55 +121,55 @@ This is the first protected vertical slice. It creates the identity schema, star
 
 ### 3.1 Create the identity and onboarding schema
 
-- [ ] Add Liquibase changesets for users, managers, customers, audit events, and generic API-request idempotency records.
-- [ ] Add the roles, lifecycle-status values, credential version, foreign keys, unique username constraint, customer-to-manager relationship, customer version, and required timestamps from the design.
-- [ ] Add the unique identity-document constraint using document type, issuing country, and document lookup hash; never store a plaintext document number.
-- [ ] Add database constraints for fixed-format fields such as country codes and bounded text fields where appropriate, while keeping age, document-validity, password-format, and cross-profile rules in service validation.
-- [ ] Add the indexes needed now for login by username, customer retrieval, manager relationships, and idempotency lookup.
-- [ ] Create separate User, Manager, and Customer entities. Keep Manager and Customer as one-to-one role-specific profiles rather than a nullable-field mega-entity.
-- [ ] Model role and lifecycle status as explicit enums; do not accept arbitrary database strings in API or business logic.
-- [ ] Validate in the service that a user has exactly one profile matching its role, because this cross-table invariant cannot be expressed fully by a normal foreign key.
+- [x] Add Liquibase changesets for users, managers, customers, audit events, and generic API-request idempotency records.
+- [x] Add the roles, lifecycle-status values, credential version, foreign keys, unique username constraint, customer-to-manager relationship, customer version, and required timestamps from the design.
+- [x] Add the unique identity-document constraint using document type, issuing country, and document lookup hash; never store a plaintext document number.
+- [x] Add database constraints for fixed-format fields such as country codes and bounded text fields where appropriate, while keeping age, document-validity, password-format, and cross-profile rules in service validation.
+- [x] Add the indexes needed now for login by username, customer retrieval, manager relationships, and idempotency lookup.
+- [x] Create separate User, Manager, and Customer entities. Keep Manager and Customer as one-to-one role-specific profiles rather than a nullable-field mega-entity.
+- [x] Model role and lifecycle status as explicit enums; do not accept arbitrary database strings in API or business logic.
+- [x] Validate in the service that a user has exactly one profile matching its role, because this cross-table invariant cannot be expressed fully by a normal foreign key.
 
 ### 3.2 Implement sensitive customer-data handling
 
-- [ ] Normalize identity-document numbers consistently before calculating their lookup value.
-- [ ] Encrypt each document number with application-level authenticated encryption and a configured key version before persistence.
-- [ ] Calculate the HMAC-SHA-256 lookup hash with a separate configured secret and use only that hash for duplicate detection.
-- [ ] Bind encryption and HMAC keys through validated configuration properties; fail startup if a required key is absent or malformed.
-- [ ] Ensure entities, DTOs, exceptions, structured logs, and audit metadata never expose document numbers, ciphertext, lookup hashes, or encryption keys.
-- [ ] Test that the persisted ciphertext is not plaintext and that the same normalized document is detected as a duplicate despite randomized encryption.
+- [x] Normalize identity-document numbers consistently before calculating their lookup value.
+- [x] Encrypt each document number with application-level authenticated encryption and a configured key version before persistence.
+- [x] Calculate the HMAC-SHA-256 lookup hash with a separate configured secret and use only that hash for duplicate detection.
+- [x] Bind encryption and HMAC keys through validated configuration properties; fail startup if a required key is absent or malformed.
+- [x] Ensure entities, DTOs, exceptions, structured logs, and audit metadata never expose document numbers, ciphertext, lookup hashes, or encryption keys.
+- [x] Test that the persisted ciphertext is not plaintext and that the same normalized document is detected as a duplicate despite randomized encryption.
 
 ### 3.3 Seed manager principals safely
 
-- [ ] Define configuration for one or more startup managers, including username, initial password, and display names.
-- [ ] Run manager seeding only after Liquibase has completed.
-- [ ] For each configured manager, create the User and Manager profile in one transaction when they do not already exist.
-- [ ] Make seeding idempotent: an existing matching manager is retained and is not silently overwritten on every restart.
-- [ ] BCrypt-hash manager passwords before persistence and never log configured credentials or hashes.
-- [ ] Do not add a REST endpoint for manager creation, reassignment, portfolio management, or manager customer-account access boundaries.
+- [x] Define configuration for one or more startup managers, including username, initial password, and display names.
+- [x] Run manager seeding only after Liquibase has completed.
+- [x] For each configured manager, create the User and Manager profile in one transaction when they do not already exist.
+- [x] Make seeding idempotent: an existing matching manager is retained and is not silently overwritten on every restart.
+- [x] BCrypt-hash manager passwords before persistence and never log configured credentials or hashes.
+- [x] Do not add a REST endpoint for manager creation, reassignment, portfolio management, or manager customer-account access boundaries.
 
 ### 3.4 Implement stateless JWT authentication
 
-- [ ] Configure Spring Security as stateless and deny protected endpoints by default.
-- [ ] Expose only login, health endpoints, and the intended documentation endpoint without a bearer token; keep all customer APIs manager-protected for this phase.
-- [ ] Implement login with normalized username and password verification. Issue a signed JWT only for an ACTIVE user.
-- [ ] Include a stable subject, role, unique jti, credential-version claim, and configured expiration in the JWT. Default the expiration to one hour.
-- [ ] Implement bearer-token authentication that verifies signature and expiry, checks the jti invalidation entry in Redis, and loads the current user status and credential version.
-- [ ] Reject blocked or deactivated users before business logic. Create a principal that carries only the identifiers and role needed for authorization.
-- [ ] Implement authenticated logout by storing the JWT jti in Redis with a TTL no longer than the token's remaining lifetime.
-- [ ] Return the agreed login and logout error codes without revealing whether an invalid login failed because of an unknown username, wrong password, or inactive user.
-- [ ] Defer Redis rate limiting to phase 9, but keep the authentication flow structured so a boundary limiter can be added without changing login business logic.
+- [x] Configure Spring Security as stateless and deny protected endpoints by default.
+- [x] Expose only login, health endpoints, and the intended documentation endpoint without a bearer token; keep all customer APIs manager-protected for this phase.
+- [x] Implement login with normalized username and password verification. Issue a signed JWT only for an ACTIVE user.
+- [x] Include a stable subject, role, unique jti, credential-version claim, and configured expiration in the JWT. Default the expiration to one hour.
+- [x] Implement bearer-token authentication that verifies signature and expiry, checks the jti invalidation entry in Redis, and loads the current user status and credential version.
+- [x] Reject blocked or deactivated users before business logic. Create a principal that carries only the identifiers and role needed for authorization.
+- [x] Implement authenticated logout by storing the JWT jti in Redis with a TTL no longer than the token's remaining lifetime.
+- [x] Return the agreed login and logout error codes without revealing whether an invalid login failed because of an unknown username, wrong password, or inactive user.
+- [x] Defer Redis rate limiting to phase 9, but keep the authentication flow structured so a boundary limiter can be added without changing login business logic.
 
 ### 3.5 Implement manager-led customer onboarding
 
-- [ ] Define request and response DTOs for POST /api/v1/customers and GET /api/v1/customers/{customerId}.
-- [ ] Require a manager bearer token and a UUID v4 Idempotency-Key for customer creation.
-- [ ] Validate manager-assigned username format, exactly 12 printable password characters, and that the password differs from the username.
-- [ ] Validate required names, age of at least 18 at creation, optional non-expired document expiry date, E.164 phone number, ISO residence and issuing countries, address fields, and a valid IANA timezone.
-- [ ] In one database transaction, reserve the generic idempotency record, create the User and Customer profile, assign the acting manager as manager_id, write the CUSTOMER_CREATED audit event, and finalize the saved response.
-- [ ] Replay a completed identical creation request from its saved idempotency response. Reject reuse of the same key with different normalized input and handle a concurrent in-progress key according to the design.
-- [ ] Return only the documented safe customer fields. Never return the supplied password, password hash, document number, encrypted document, or lookup hash.
-- [ ] Implement manager retrieval of one customer using the safe customer response contract. Defer customer listing, profile updates, and lifecycle transitions to phase 4.
+- [x] Define request and response DTOs for POST /api/v1/customers and GET /api/v1/customers/{customerId}.
+- [x] Require a manager bearer token and a UUID v4 Idempotency-Key for customer creation.
+- [x] Validate manager-assigned username format, exactly 12 printable password characters, and that the password differs from the username.
+- [x] Validate required names, age of at least 18 at creation, optional non-expired document expiry date, E.164 phone number, ISO residence and issuing countries, address fields, and a valid IANA timezone.
+- [x] In one database transaction, reserve the generic idempotency record, create the User and Customer profile, assign the acting manager as manager_id, write the CUSTOMER_CREATED audit event, and finalize the saved response.
+- [x] Replay a completed identical creation request from its saved idempotency response. Reject reuse of the same key with different normalized input and handle a concurrent in-progress key according to the design.
+- [x] Return only the documented safe customer fields. Never return the supplied password, password hash, document number, encrypted document, or lookup hash.
+- [x] Implement manager retrieval of one customer using the safe customer response contract. Defer customer listing, profile updates, and lifecycle transitions to phase 4.
 
 ### 3.6 Test the protected vertical slice
 

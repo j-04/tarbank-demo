@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+  <changeSet id="V001-identity-and-onboarding" author="tarbank">
+    <createTable tableName="users">
+      <column name="id" type="BIGSERIAL"><constraints primaryKey="true" nullable="false"/></column>
+      <column name="role" type="VARCHAR(20)"><constraints nullable="false"/></column>
+      <column name="username" type="VARCHAR(32)"><constraints nullable="false" unique="true" uniqueConstraintName="uk_users_username"/></column>
+      <column name="password_hash" type="VARCHAR(255)"><constraints nullable="false"/></column>
+      <column name="credential_version" type="INT" defaultValueNumeric="0"><constraints nullable="false"/></column>
+      <column name="first_name" type="VARCHAR(100)"><constraints nullable="false"/></column>
+      <column name="middle_name" type="VARCHAR(100)"/>
+      <column name="last_name" type="VARCHAR(100)"><constraints nullable="false"/></column>
+      <column name="status" type="VARCHAR(20)"><constraints nullable="false"/></column>
+      <column name="created_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+      <column name="updated_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+      <column name="deactivated_at" type="TIMESTAMPTZ"/>
+    </createTable>
+    <sql>ALTER TABLE users ADD CONSTRAINT ck_users_role CHECK (role IN ('MANAGER', 'CUSTOMER'))</sql>
+    <sql>ALTER TABLE users ADD CONSTRAINT ck_users_status CHECK (status IN ('ACTIVE', 'BLOCKED', 'DEACTIVATED'))</sql>
+    <sql>ALTER TABLE users ADD CONSTRAINT ck_users_username CHECK (username ~ '^[a-z][a-z0-9._-]{2,31}$')</sql>
+    <createIndex tableName="users" indexName="ix_users_username"><column name="username"/></createIndex>
+
+    <createTable tableName="managers">
+      <column name="user_id" type="BIGINT"><constraints primaryKey="true" nullable="false" foreignKeyName="fk_managers_user" referencedTableName="users" referencedColumnNames="id"/></column>
+    </createTable>
+    <createTable tableName="customers">
+      <column name="user_id" type="BIGINT"><constraints primaryKey="true" nullable="false" foreignKeyName="fk_customers_user" referencedTableName="users" referencedColumnNames="id"/></column>
+      <column name="date_of_birth" type="DATE"><constraints nullable="false"/></column>
+      <column name="email" type="VARCHAR(320)"/>
+      <column name="phone_number" type="VARCHAR(16)"><constraints nullable="false"/></column>
+      <column name="residence_country" type="CHAR(2)"><constraints nullable="false"/></column>
+      <column name="residence_city" type="VARCHAR(100)"><constraints nullable="false"/></column>
+      <column name="residence_postal_code" type="VARCHAR(20)"><constraints nullable="false"/></column>
+      <column name="residence_address_line_1" type="VARCHAR(255)"><constraints nullable="false"/></column>
+      <column name="residence_address_line_2" type="VARCHAR(255)"/>
+      <column name="document_type" type="VARCHAR(30)"><constraints nullable="false"/></column>
+      <column name="document_issuing_country" type="CHAR(2)"><constraints nullable="false"/></column>
+      <column name="document_number_encrypted" type="BYTEA"><constraints nullable="false"/></column>
+      <column name="document_number_hash" type="CHAR(64)"><constraints nullable="false"/></column>
+      <column name="document_expires_on" type="DATE"/>
+      <column name="timezone" type="VARCHAR(64)"><constraints nullable="false"/></column>
+      <column name="manager_id" type="BIGINT"><constraints nullable="false" foreignKeyName="fk_customers_manager" referencedTableName="managers" referencedColumnNames="user_id"/></column>
+      <column name="version" type="INT" defaultValueNumeric="0"><constraints nullable="false"/></column>
+      <column name="status_changed_by_manager_id" type="BIGINT"><constraints foreignKeyName="fk_customers_status_manager" referencedTableName="managers" referencedColumnNames="user_id"/></column>
+      <column name="status_changed_at" type="TIMESTAMPTZ"/>
+    </createTable>
+    <addUniqueConstraint tableName="customers" columnNames="document_type,document_issuing_country,document_number_hash" constraintName="uk_customers_document"/>
+    <createIndex tableName="customers" indexName="ix_customers_manager"><column name="manager_id"/></createIndex>
+
+    <createTable tableName="audit_events">
+      <column name="id" type="BIGSERIAL"><constraints primaryKey="true" nullable="false"/></column>
+      <column name="actor_user_id" type="BIGINT"><constraints foreignKeyName="fk_audit_events_actor" referencedTableName="users" referencedColumnNames="id"/></column>
+      <column name="action" type="VARCHAR(100)"><constraints nullable="false"/></column>
+      <column name="target_type" type="VARCHAR(100)"><constraints nullable="false"/></column>
+      <column name="target_id" type="VARCHAR(255)"><constraints nullable="false"/></column>
+      <column name="correlation_id" type="UUID"><constraints nullable="false"/></column>
+      <column name="metadata" type="JSONB"/>
+      <column name="created_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+    </createTable>
+    <createIndex tableName="audit_events" indexName="ix_audit_events_target"><column name="target_type"/><column name="target_id"/></createIndex>
+    <createIndex tableName="audit_events" indexName="ix_audit_events_correlation"><column name="correlation_id"/></createIndex>
+
+    <createTable tableName="api_request_idempotency">
+      <column name="id" type="BIGSERIAL"><constraints primaryKey="true" nullable="false"/></column>
+      <column name="actor_user_id" type="BIGINT"><constraints nullable="false" foreignKeyName="fk_api_idempotency_actor" referencedTableName="users" referencedColumnNames="id"/></column>
+      <column name="operation" type="VARCHAR(100)"><constraints nullable="false"/></column>
+      <column name="resource_scope" type="VARCHAR(255)"><constraints nullable="false"/></column>
+      <column name="idempotency_key" type="UUID"><constraints nullable="false"/></column>
+      <column name="request_hash" type="VARCHAR(64)"><constraints nullable="false"/></column>
+      <column name="status" type="VARCHAR(20)"><constraints nullable="false"/></column>
+      <column name="response_status" type="INT"/>
+      <column name="response_body" type="JSONB"/>
+      <column name="expires_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+      <column name="created_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+      <column name="updated_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+    </createTable>
+    <sql>ALTER TABLE api_request_idempotency ADD CONSTRAINT ck_api_idempotency_status CHECK (status IN ('IN_PROGRESS', 'COMPLETED'))</sql>
+    <addUniqueConstraint tableName="api_request_idempotency" columnNames="actor_user_id,operation,resource_scope,idempotency_key" constraintName="uk_api_request_idempotency_scope"/>
+    <createIndex tableName="api_request_idempotency" indexName="ix_api_idempotency_expires"><column name="expires_at"/></createIndex>
+  </changeSet>
+</databaseChangeLog>

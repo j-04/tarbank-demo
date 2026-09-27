@@ -23,9 +23,9 @@ class MigrationIntegrationTest extends AbstractIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void appliesOnlyTheEmptyLiquibaseBaselineToAFreshPostgreSqlDatabase() {
-        assertThat(publicTables()).containsExactly("databasechangelog", "databasechangeloglock");
-        assertThat(changelogEntryCount()).isZero();
+    void appliesTheIdentityAndOnboardingSchemaToAFreshPostgreSqlDatabase() {
+        assertThat(publicTables()).containsExactly("api_request_idempotency", "audit_events", "customers", "databasechangelog", "databasechangeloglock", "managers", "users");
+        assertThat(changelogEntryCount()).isEqualTo(1);
     }
 
     @Test
@@ -37,7 +37,7 @@ class MigrationIntegrationTest extends AbstractIntegrationTest {
         }
 
         assertThat(changelogEntryCount()).isEqualTo(changelogEntriesBeforeRestart);
-        assertThat(publicTables()).containsExactly("databasechangelog", "databasechangeloglock");
+        assertThat(publicTables()).containsExactly("api_request_idempotency", "audit_events", "customers", "databasechangelog", "databasechangeloglock", "managers", "users");
     }
 
     @Test
@@ -46,7 +46,7 @@ class MigrationIntegrationTest extends AbstractIntegrationTest {
                         "spring.liquibase.change-log", "classpath:db/changelog/missing-changelog.xml")))
                 .hasStackTraceContaining("missing-changelog.xml");
 
-        assertThat(publicTables()).containsExactly("databasechangelog", "databasechangeloglock");
+        assertThat(publicTables()).containsExactly("api_request_idempotency", "audit_events", "customers", "databasechangelog", "databasechangeloglock", "managers", "users");
     }
 
     @Test

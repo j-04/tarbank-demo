@@ -6,10 +6,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.List;
-import java.util.UUID;
-import java.util.regex.Pattern;
 import org.apache.logging.log4j.CloseableThreadContext;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -18,11 +14,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.io.IOException;
+import java.util.List;
+import java.util.UUID;
+import java.util.regex.Pattern;
+
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdFilter extends OncePerRequestFilter {
 
     public static final String HEADER_NAME = "X-Correlation-Id";
+
     private static final Pattern UUID_HEADER_PATTERN = Pattern.compile(
             "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 

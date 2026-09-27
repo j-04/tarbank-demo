@@ -1,57 +1,32 @@
 package com.tarbank.common.config;
 
 import com.tarbank.common.http.ApiSecurityErrorWriter;
+import com.tarbank.security.application.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 class BootstrapSecurityConfiguration {
-
     @Bean
     @Order(1)
-    SecurityFilterChain managementHealthSecurityFilterChain(
-            HttpSecurity http,
-            @Value("${management.server.port:8081}") int managementPort) throws Exception {
-        return http
-                .securityMatcher(request -> request.getLocalPort() == managementPort)
-                .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/actuator/health/**").permitAll()
-                        .anyRequest().denyAll())
-                .build();
+    SecurityFilterChain management(HttpSecurity http, @Value("${management.server.port:8081}") int port) throws Exception {
+        return http.securityMatcher(r -> r.getLocalPort() == port).csrf(AbstractHttpConfigurer::disable).sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS)).authorizeHttpRequests(a -> a.requestMatchers("/actuator/health/**").permitAll().anyRequest().denyAll()).build();
     }
 
     @Bean
     @Order(2)
-    SecurityFilterChain bootstrapSecurityFilterChain(HttpSecurity http, ApiSecurityErrorWriter errorWriter) throws Exception {
-        return http
-                .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint((request, response, exception) ->
-                                errorWriter.write(response, HttpStatus.UNAUTHORIZED,
-                                        "UNAUTHENTICATED", "Authentication is required."))
-                        .accessDeniedHandler((request, response, exception) ->
-                                errorWriter.write(response, HttpStatus.FORBIDDEN,
-                                        "ACCESS_DENIED", "Access is denied.")))
-                .authorizeHttpRequests(authorize -> authorize.anyRequest().denyAll())
-                .build();
-    }
-
-    @Bean
-    UserDetailsService bootstrapUserDetailsService() {
-        return new InMemoryUserDetailsManager();
+    SecurityFilterChain application(HttpSecurity http, ApiSecurityErrorWriter errors, JwtAuthenticationFilter jwt) throws Exception {
+        return http.csrf(AbstractHttpConfigurer::disable).sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS)).exceptionHandling(e -> e.authenticationEntryPoint((q, p, x) -> errors.write(p, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication is required.")).accessDeniedHandler((q, p, x) -> errors.write(p, HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied."))).addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class).authorizeHttpRequests(a -> a.requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll().requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll().requestMatchers("/api/v1/auth/logout").authenticated().requestMatchers("/api/v1/customers/**").hasRole("MANAGER").anyRequest().denyAll()).build();
     }
 }

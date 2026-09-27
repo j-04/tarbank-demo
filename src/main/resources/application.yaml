@@ -53,6 +53,9 @@ tarbank:
     key-version: v1
     encryption-key: ${TARBANK_DOCUMENT_ENCRYPTION_KEY:}
     lookup-hmac-key: ${TARBANK_DOCUMENT_LOOKUP_HMAC_KEY:}
+  idempotency:
+    retention: PT24H
+    lock-timeout: PT5S
   manager-seed:
     managers:
       - username: ${TARBANK_MANAGER_USERNAME}

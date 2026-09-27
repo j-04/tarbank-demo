@@ -9,6 +9,7 @@ class SecretConfigurationValidator {
     private static final int MINIMUM_SECRET_LENGTH = 32;
 
     private final JwtProperties jwtProperties;
+
     private final DocumentProtectionProperties documentProtectionProperties;
 
     SecretConfigurationValidator(
