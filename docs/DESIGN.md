@@ -19,6 +19,13 @@ Code is organized by domain area:
    - `service` layer: authentication, authorization, JWT handling, and rate limiting
    - `repository` layer: PostgreSQL persists users and credentials; Redis stores JWT invalidation and rate-limit data. Every JWT includes a unique jti and exp claim; logout stores the jti in Redis until its expiration, and authentication rejects a token with an active invalidation entry.
 
+### Session validity
+
+A protected request is authenticated once at entry. The security layer verifies the JWT signature, expiration, and Redis invalidation entry, then loads the current user status. Only ACTIVE users may proceed to business logic; BLOCKED and DEACTIVATED users receive 403 ACCESS_DENIED. Login does not issue tokens to non-active users.
+
+A request authenticated before its JWT expires may finish normally even if expiration occurs during its database transaction. A later retry with an expired token is rejected and requires authentication again.
+
+
 ## API rate limiting
 
 Rate limiting is enforced at the application boundary before a request reaches business logic. It complements, rather than replaces, upstream protection such as a reverse proxy, API gateway, or WAF.
@@ -431,7 +438,7 @@ Internal codes use the form TAR-AREA-NNN. Structured logs for an error include i
 | --- | --- | --- |
 | 400 | VALIDATION_ERROR | Request data is malformed or violates an input constraint. |
 | 401 | UNAUTHENTICATED or INVALID_CREDENTIALS | JWT is missing or invalid, or login credentials are invalid. |
-| 403 | ACCESS_DENIED | Authenticated user does not own or may not manage the requested resource. |
+| 403 | ACCESS_DENIED | Authenticated user is non-active, does not own, or may not manage the requested resource. |
 | 404 | RESOURCE_NOT_FOUND | Requested resource does not exist or is not visible to the caller. |
 | 409 | USERNAME_ALREADY_EXISTS, IDENTITY_DOCUMENT_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, REQUEST_IN_PROGRESS, or INVALID_STATUS_TRANSITION | A unique value conflicts, a duplicate request conflicts, a matching request is in progress, or a lifecycle transition is invalid. |
 | 412 | PRECONDITION_FAILED | The supplied ETag is stale. |
