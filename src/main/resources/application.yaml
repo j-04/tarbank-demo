@@ -47,12 +47,12 @@ tarbank:
     password: ${TARBANK_REDIS_PASSWORD}
   jwt:
     issuer: tarbank
-    signing-key: ${TARBANK_JWT_SIGNING_KEY}
+    signing-key: ${TARBANK_JWT_SIGNING_KEY:}
     access-token-ttl: PT1H
   document-protection:
     key-version: v1
-    encryption-key: ${TARBANK_DOCUMENT_ENCRYPTION_KEY}
-    lookup-hmac-key: ${TARBANK_DOCUMENT_LOOKUP_HMAC_KEY}
+    encryption-key: ${TARBANK_DOCUMENT_ENCRYPTION_KEY:}
+    lookup-hmac-key: ${TARBANK_DOCUMENT_LOOKUP_HMAC_KEY:}
   manager-seed:
     managers:
       - username: ${TARBANK_MANAGER_USERNAME}

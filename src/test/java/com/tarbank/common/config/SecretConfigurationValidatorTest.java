@@ -20,4 +20,17 @@ class SecretConfigurationValidatorTest {
                         .contains("tarbank.jwt.signing-key")
                         .doesNotContain(shortSecret));
     }
+
+    @Test
+    void rejectsAnUnresolvedSecretPlaceholderWithoutEchoingIt() {
+        String unresolvedPlaceholder = "${TARBANK_DOCUMENT_ENCRYPTION_KEY}";
+        SecretConfigurationValidator validator = new SecretConfigurationValidator(
+                new JwtProperties("tarbank", "a".repeat(32), Duration.ofHours(1)),
+                new DocumentProtectionProperties("v1", unresolvedPlaceholder, "b".repeat(32)));
+
+        assertThatThrownBy(validator::validateSecrets)
+                .satisfies(exception -> assertThat(exception.getMessage())
+                        .contains("tarbank.document-protection.encryption-key")
+                        .doesNotContain(unresolvedPlaceholder));
+    }
 }

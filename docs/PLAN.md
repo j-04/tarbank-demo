@@ -74,45 +74,45 @@ This phase makes PostgreSQL schema evolution repeatable before any banking table
 
 ### 2.1 Configure Liquibase as the schema owner
 
-- [ ] Use the valid empty Liquibase master changelog created in phase 1 and verify Spring Boot runs it at startup.
-- [ ] Establish one naming convention for ordered versioned changelogs, for example a version or timestamp followed by a concise purpose.
-- [ ] Add the first versioned changelog only when it owns a real schema change. Do not add a no-op changeset merely to create a migration number.
-- [ ] Configure every profile to use Liquibase for schema changes.
-- [ ] Set Hibernate ddl-auto to validate once entities exist; do not use create, create-drop, or update outside an explicitly isolated local experiment.
-- [ ] Treat an applied changeset as immutable. Correct a released schema through a new changeset rather than editing migration history.
-- [ ] Reserve migrations for tables, constraints, indexes, database checks, and required reference data. Keep manager startup seeding in application code for phase 3.
+- [x] Use the valid empty Liquibase master changelog created in phase 1 and verify Spring Boot runs it at startup.
+- [x] Establish one naming convention for ordered versioned changelogs, for example a version or timestamp followed by a concise purpose.
+- [x] Add the first versioned changelog only when it owns a real schema change. Do not add a no-op changeset merely to create a migration number.
+- [x] Configure every profile to use Liquibase for schema changes.
+- [x] Set Hibernate ddl-auto to validate once entities exist; do not use create, create-drop, or update outside an explicitly isolated local experiment.
+- [x] Treat an applied changeset as immutable. Correct a released schema through a new changeset rather than editing migration history.
+- [x] Reserve migrations for tables, constraints, indexes, database checks, and required reference data. Keep manager startup seeding in application code for phase 3.
 
 ### 2.2 Configure PostgreSQL connections
 
-- [ ] Add typed datasource settings for the local Compose database and test database.
-- [ ] Use PostgreSQL as the only supported runtime and integration-test database; do not introduce H2 or another database with different locking and numeric behavior.
-- [ ] Pin the PostgreSQL container major version and use the same version for Docker Compose and Testcontainers.
-- [ ] Make the application wait for a reachable database through normal connection and readiness behavior, not by relying only on Compose startup order.
-- [ ] Confirm that the direct local profile and the Compose profile use environment-specific connection settings without duplicating application behavior.
+- [x] Add typed datasource settings for the local Compose database and test database.
+- [x] Use PostgreSQL as the only supported runtime and integration-test database; do not introduce H2 or another database with different locking and numeric behavior.
+- [x] Pin the PostgreSQL container major version and use the same version for Docker Compose and Testcontainers.
+- [x] Make the application wait for a reachable database through normal connection and readiness behavior, not by relying only on Compose startup order.
+- [x] Confirm that the direct local profile and the Compose profile use environment-specific connection settings without duplicating application behavior.
 
 ### 2.3 Build the Testcontainers integration-test base
 
-- [ ] Add pinned PostgreSQL and Redis Testcontainers dependencies with reusable test container configuration.
-- [ ] Start both containers before the Spring test application context and supply JDBC and Redis connection properties dynamically.
-- [ ] Ensure each integration-test run starts from a fresh PostgreSQL database, applies the same Liquibase changelogs used in the demo runtime, and uses isolated Redis state.
-- [ ] Keep container image versions pinned and separate integration tests from fast unit tests.
-- [ ] Add only generic test utilities in this phase, such as a clock or JSON helper. Clear the dedicated Redis test database or namespace keys between tests. Add authenticated-request and seeded-user helpers with the identity feature in phase 3.
+- [x] Add pinned PostgreSQL and Redis Testcontainers dependencies with reusable test container configuration.
+- [x] Start both containers before the Spring test application context and supply JDBC and Redis connection properties dynamically.
+- [x] Ensure each integration-test run starts from a fresh PostgreSQL database, applies the same Liquibase changelogs used in the demo runtime, and uses isolated Redis state.
+- [x] Keep container image versions pinned and separate integration tests from fast unit tests.
+- [x] Add only generic test utilities in this phase, such as a clock or JSON helper. Clear the dedicated Redis test database or namespace keys between tests. Add authenticated-request and seeded-user helpers with the identity feature in phase 3.
 
 ### 2.4 Verify migration behavior
 
-- [ ] Add an integration test that starts the application against fresh PostgreSQL and Redis Testcontainers.
-- [ ] Assert that Liquibase completes successfully and records its applied changelogs.
-- [ ] Verify that a second application startup against the same database does not reapply or alter completed migrations.
-- [ ] Verify that an invalid or missing changelog fails startup clearly rather than allowing Hibernate to create a replacement schema.
-- [ ] Confirm that the empty baseline contains no accidental banking tables; users, customers, accounts, and transaction tables arrive with their owning feature phases.
+- [x] Add an integration test that starts the application against fresh PostgreSQL and Redis Testcontainers.
+- [x] Assert that Liquibase completes successfully and records its applied changelogs.
+- [x] Verify that a second application startup against the same database does not reapply or alter completed migrations.
+- [x] Verify that an invalid or missing changelog fails startup clearly rather than allowing Hibernate to create a replacement schema.
+- [x] Confirm that the empty baseline contains no accidental banking tables; users, customers, accounts, and transaction tables arrive with their owning feature phases.
 
 ### Completion checklist
 
-- [ ] The project starts against PostgreSQL with Liquibase enabled.
-- [ ] No profile can automatically create or update the production-like schema through Hibernate.
-- [ ] The Testcontainers integration test creates a fresh PostgreSQL database, applies the full migration set, and uses isolated Redis state.
-- [ ] Re-running the application against the same database is safe and does not change applied migrations.
-- [ ] No H2-specific configuration or test assumptions are present.
+- [x] The project starts against PostgreSQL with Liquibase enabled.
+- [x] No profile can automatically create or update the production-like schema through Hibernate.
+- [x] The Testcontainers integration test creates a fresh PostgreSQL database, applies the full migration set, and uses isolated Redis state.
+- [x] Re-running the application against the same database is safe and does not change applied migrations.
+- [x] No H2-specific configuration or test assumptions are present.
 - [ ] Commit the completed checkpoint with a message such as establish Liquibase migration baseline.
 
 ## 3. Implement identity, authentication, and customer creation

@@ -25,10 +25,17 @@ class SecretConfigurationValidator {
     }
 
     private void validateSecret(String propertyName, String value) {
-        if (value == null || value.isBlank() || value.length() < MINIMUM_SECRET_LENGTH) {
+        if (value == null || value.isBlank() || isUnresolvedPlaceholder(value)) {
+            throw new IllegalStateException("Invalid configuration: " + propertyName + " must be configured.");
+        }
+        if (value.length() < MINIMUM_SECRET_LENGTH) {
             throw new IllegalStateException(
                     "Invalid configuration: " + propertyName + " must contain at least "
                             + MINIMUM_SECRET_LENGTH + " characters.");
         }
+    }
+
+    private boolean isUnresolvedPlaceholder(String value) {
+        return value.startsWith("${") && value.endsWith("}");
     }
 }
