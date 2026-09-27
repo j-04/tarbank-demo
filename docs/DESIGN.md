@@ -159,6 +159,18 @@ A transfer has two entries: a negative source entry and a positive destination e
 - For a completed operation, the application service validates these invariants and writes the transaction, entries, balance projection, daily-limit usage, idempotency outcome, and audit event in one database transaction.
 - A failed operation writes a FAILED transaction with its failure code, idempotency outcome, and audit event, but has no transaction entries, balance change, or daily-limit usage.
 
+### Money-operation concurrency
+
+Money operations use PostgreSQL READ COMMITTED isolation with explicit row locks; SERIALIZABLE isolation is not required for this demo. The application performs the following work in one database transaction:
+
+1. Claim or check the money-operation idempotency record.
+2. Lock the affected account row. For a transfer, lock both account rows by ascending internal account ID, never by source-then-destination order.
+3. Lock or atomically create the source account daily-limit-usage row with an upsert. This prevents concurrent first operations from creating duplicate usage rows.
+4. After the locks are held, validate account status, currency, available balance, and remaining daily limit.
+5. Write the transaction, entries, balance projection, daily-limit usage, audit event, and final idempotency response.
+
+The deterministic account-lock order prevents opposite-direction transfer deadlocks. Locking before validation prevents concurrent withdrawals or transfers from both passing the same balance or daily-limit check.
+
 ### Idempotency records
 
 | Field | Type | Constraints | Description |
