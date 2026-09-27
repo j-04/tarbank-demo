@@ -145,6 +145,8 @@ The daily amount that can be withdrawn or transferred from an account must be co
 - PostgreSQL: mandatory primary database
 - Liquibase: mandatory provider for versioned database migrations
 - Redis: mandatory for storing and invalidating JWT tokens and distributed rate-limit state
+- Docker: mandatory for building the service image
+- Docker Compose: mandatory for running the demo service, PostgreSQL, and Redis
 - JUnit (latest compatible version)
 - Testcontainers for setting up a test PostgreSQL instance
 - Log4j for logging

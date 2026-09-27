@@ -4,6 +4,12 @@
 
 The service is a modular monolith. Domain-driven design principles establish clear boundaries between domain areas; they do not imply a future microservice split.
 
+## Deployment
+
+Docker builds the versioned service image. Docker Compose is the supported way to run the interview demo: it starts that image together with PostgreSQL and Redis on an isolated Compose network. PostgreSQL uses a named volume so its data survives container restarts; the database and Redis are not exposed as public services.
+
+The Compose configuration supplies runtime settings such as database and Redis connections, JWT signing keys, and document-encryption keys. Secrets are provided at deployment time and are never baked into the image or committed to source control. Local Compose runs may use HTTP; deployments outside local development must provide HTTPS. No reverse proxy is part of this demo deployment.
+
 ## Scope and deliberate non-goals
 
 This service is an interview-demo simulation of online-banking operations. It supports authenticated manager and customer workflows, EUR and USD accounts, simulated deposits and withdrawals, same-currency internal transfers, daily limits, account history, auditing, and failure/idempotency behavior.
