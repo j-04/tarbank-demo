@@ -345,7 +345,7 @@ This is the highest-risk implementation phase. It delivers correctly persisted s
 - [ ] Add Liquibase changesets for transactions, immutable transaction entries, dedicated money-operation idempotency records, and daily-limit usage.
 - [ ] Reuse the audit-event table introduced in phase 3; do not create a second audit mechanism for money operations.
 - [ ] Model transaction type and final status as explicit enums. Generate a UUID transaction ID in the application.
-- [ ] Add transaction constraints for positive numeric(19,4) amount, supported currency, source and destination requirements by operation type, and a nullable failure code only when the transaction failed.
+- [ ] Add transaction constraints for positive numeric(19,4) amount, supported currency, source and destination requirements by operation type, and failure_code required for FAILED transactions and null for COMPLETED transactions.
 - [ ] Add transaction-entry constraints for non-zero signed deltas, non-negative balance_after, one entry per account per transaction, and the account-history index defined in the design.
 - [ ] Add the unique money idempotency scope of customer, source or deposit-target account, operation type, and UUID v4 key.
 - [ ] Add the daily-limit usage unique key of account, operation type, and customer-local date, plus the non-negative used amount constraint.
