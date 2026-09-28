@@ -328,13 +328,13 @@ This phase exposes the account lifecycle built on the persistence baseline intro
 
 ### Completion checklist
 
-- [ ] A manager can create a zero-balance EUR or USD account for an ACTIVE customer through the documented idempotent API.
-- [ ] Account numbers are unique, immutable, and match the TB plus 14-digit format.
-- [ ] Managers can read any account; customers can read only their own accounts.
-- [ ] Account status transitions use ETags, are audited, and cannot reactivate a deactivated account.
-- [ ] Customer status rules and account status rules work together without automatic account restoration on customer unblock.
-- [ ] No money movement or daily-limit override behavior is implemented in this phase.
-- [ ] Commit the completed checkpoint with a message such as implement account lifecycle management.
+- [x] A manager can create a zero-balance EUR or USD account for an ACTIVE customer through the documented idempotent API.
+- [x] Account numbers are unique, immutable, and match the TB plus 14-digit format.
+- [x] Managers can read any account; customers can read only their own accounts.
+- [x] Account status transitions use ETags, are audited, and cannot reactivate a deactivated account.
+- [x] Customer status rules and account status rules work together without automatic account restoration on customer unblock.
+- [x] No money movement or daily-limit override behavior is implemented in this phase.
+- [x] Commit the completed checkpoint with a message such as implement account lifecycle management.
 
 ## 6. Implement the money-operation core
 
