@@ -34,14 +34,20 @@ public class AuthService {
 
     public JwtService.IssuedToken login(String username,
                                         String password) {
-        var user = users.findByUsername(username.trim().toLowerCase(java.util.Locale.ROOT)).filter(u -> u.getStatus() == UserStatus.ACTIVE).filter(u -> passwords.matches(password, u.getPasswordHash())).filter(profiles::matches).orElseThrow(() -> new InvalidCredentialsException());
+        var user = users.findByUsername(username.trim()
+                                                .toLowerCase(java.util.Locale.ROOT))
+                        .filter(u -> u.getStatus() == UserStatus.ACTIVE)
+                        .filter(u -> passwords.matches(password, u.getPasswordHash()))
+                        .filter(profiles::matches)
+                        .orElseThrow(() -> new InvalidCredentialsException());
         return jwt.issue(user.getId(), user.getRole(), user.getCredentialVersion());
     }
 
     public void logout(TarbankPrincipal principal) {
         Duration remaining = Duration.between(java.time.Instant.now(), principal.expiresAt());
         if (!remaining.isNegative() && !remaining.isZero())
-            redis.opsForValue().set("jwt:invalidated:" + principal.tokenId(), "1", remaining);
+            redis.opsForValue()
+                 .set("jwt:invalidated:" + principal.tokenId(), "1", remaining);
     }
 
     public static class InvalidCredentialsException extends RuntimeException {

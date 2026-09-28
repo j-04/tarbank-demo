@@ -38,7 +38,7 @@ public class AccountEntity {
     @Column(nullable = false, length = 3, columnDefinition = "char(3)", updatable = false)
     private Currency currency;
 
-    @Column(nullable = false, precision = 19, scale = 4)
+    @Column(nullable = false, precision = 19, scale = 4, updatable = false)
     private BigDecimal balance;
 
     @Enumerated(EnumType.STRING)
@@ -103,6 +103,18 @@ public class AccountEntity {
 
     public String getAccountNumber() {
         return accountNumber;
+    }
+
+    public CustomerEntity getCustomer() {
+        return customer;
+    }
+
+    public Currency getCurrency() {
+        return currency;
+    }
+
+    public BigDecimal getBalance() {
+        return balance;
     }
 
     public AccountStatus getStatus() {

@@ -104,14 +104,18 @@ public class CustomerLifecycleService {
         List<CustomerEntity> rows = customerQueries.findPage(status, afterId, limit + 1);
         boolean hasNext = rows.size() > limit;
         List<CustomerEntity> page = hasNext ? rows.subList(0, limit) : rows;
-        List<CustomerSummary> items = page.stream().map(this::summary).toList();
-        String nextCursor = hasNext ? encodeCursor(page.getLast().getUserId()) : null;
+        List<CustomerSummary> items = page.stream()
+                                          .map(this::summary)
+                                          .toList();
+        String nextCursor = hasNext ? encodeCursor(page.getLast()
+                                                       .getUserId()) : null;
         return new CustomerPage(items, nextCursor);
     }
 
     @Transactional(readOnly = true)
     public VersionedCustomer find(Long id) {
-        CustomerEntity customer = customers.findById(id).orElseThrow(this::notFound);
+        CustomerEntity customer = customers.findById(id)
+                                           .orElseThrow(this::notFound);
         return new VersionedCustomer(details(customer), customer.getVersion());
     }
 
@@ -120,7 +124,7 @@ public class CustomerLifecycleService {
                                     int expectedVersion,
                                     UpdateCustomerRequest request,
                                     TarbankPrincipal principal) {
-        CustomerEntity customer = customers.lockById(id).orElseThrow(this::notFound);
+        CustomerEntity customer = lockCustomer(id);
         requireVersion(customer, expectedVersion);
         ManagerEntity manager = manager(principal);
         Instant now = Instant.now();
@@ -129,8 +133,9 @@ public class CustomerLifecycleService {
         String firstName = suppliedText(request.firstNameSupplied(), request.getFirstName(), "firstName", 100);
         String middleName = suppliedNullableText(request.middleNameSupplied(), request.getMiddleName(), "middleName", 100);
         String lastName = suppliedText(request.lastNameSupplied(), request.getLastName(), "lastName", 100);
-        customer.getUser().updateNames(firstName, request.firstNameSupplied(), middleName,
-                                       request.middleNameSupplied(), lastName, request.lastNameSupplied(), now);
+        customer.getUser()
+                .updateNames(firstName, request.firstNameSupplied(), middleName,
+                             request.middleNameSupplied(), lastName, request.lastNameSupplied(), now);
         if (request.firstNameSupplied()) changedFields.add("firstName");
         if (request.middleNameSupplied()) changedFields.add("middleName");
         if (request.lastNameSupplied()) changedFields.add("lastName");
@@ -167,9 +172,10 @@ public class CustomerLifecycleService {
                                         int expectedVersion,
                                         ChangeCustomerStatusRequest request,
                                         TarbankPrincipal principal) {
-        CustomerEntity customer = customers.lockById(id).orElseThrow(this::notFound);
+        CustomerEntity customer = lockCustomer(id);
         requireVersion(customer, expectedVersion);
-        UserStatus previous = customer.getUser().getStatus();
+        UserStatus previous = customer.getUser()
+                                      .getStatus();
         UserStatus next = request.status();
         if (!allowed(previous, next)) {
             throw new ApiException(HttpStatus.CONFLICT, "INVALID_STATUS_TRANSITION",
@@ -203,8 +209,12 @@ public class CustomerLifecycleService {
                                                                                  TarbankPrincipal principal,
                                                                                  UUID key,
                                                                                  PasswordResetRequest request) {
-        UserEntity actor = users.findById(principal.userId()).orElseThrow(this::notFound);
-        String username = customers.findById(customerId).map(c -> c.getUser().getUsername()).orElseThrow(this::notFound);
+        UserEntity actor = users.findById(principal.userId())
+                                .orElseThrow(this::notFound);
+        String username = customers.findById(customerId)
+                                   .map(c -> c.getUser()
+                                              .getUsername())
+                                   .orElseThrow(this::notFound);
         if (!passwordPolicy.isValid(request.newPassword(), username)) {
             throw validation("newPassword", "PasswordPolicy", "must satisfy the password policy");
         }
@@ -220,7 +230,9 @@ public class CustomerLifecycleService {
     private PasswordResetResponse resetPasswordFirst(Long customerId,
                                                      UserEntity actor,
                                                      String newPassword) {
-        UserEntity customerUser = users.lockById(customerId).orElseThrow(this::notFound);
+        lockCustomer(customerId);
+        UserEntity customerUser = users.lockById(customerId)
+                                       .orElseThrow(this::notFound);
         if (customerUser.getRole() != com.tarbank.security.domain.Role.CUSTOMER) throw notFound();
         Instant now = Instant.now();
         customerUser.resetPassword(passwords.encode(newPassword), now);
@@ -233,6 +245,13 @@ public class CustomerLifecycleService {
                             UserStatus next) {
         return previous == UserStatus.ACTIVE && (next == UserStatus.BLOCKED || next == UserStatus.DEACTIVATED)
                 || previous == UserStatus.BLOCKED && (next == UserStatus.ACTIVE || next == UserStatus.DEACTIVATED);
+    }
+
+    private CustomerEntity lockCustomer(Long id) {
+        customers.lockRowById(id)
+                 .orElseThrow(this::notFound);
+        return customers.findById(id)
+                        .orElseThrow(this::notFound);
     }
 
     private void requireVersion(CustomerEntity customer,
@@ -248,17 +267,25 @@ public class CustomerLifecycleService {
     }
 
     private ManagerEntity manager(TarbankPrincipal principal) {
-        return managers.findById(principal.userId()).orElseThrow(
-                () -> new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.", "TAR-AUTH-002"));
+        return managers.findById(principal.userId())
+                       .orElseThrow(
+                               () -> new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.", "TAR-AUTH-002"));
     }
 
     private CustomerSummary summary(CustomerEntity customer) {
-        return new CustomerSummary(customer.getUserId(), customer.getUser().getUsername(), customer.getUser().getStatus());
+        return new CustomerSummary(customer.getUserId(), customer.getUser()
+                                                                 .getUsername(), customer.getUser()
+                                                                                         .getStatus());
     }
 
     private CustomerDetails details(CustomerEntity customer) {
-        return new CustomerDetails(customer.getUserId(), customer.getUser().getUsername(), customer.getUser().getStatus(),
-                                   customer.getUser().getFirstName(), customer.getUser().getMiddleName(), customer.getUser().getLastName(),
+        return new CustomerDetails(customer.getUserId(), customer.getUser()
+                                                                 .getUsername(), customer.getUser()
+                                                                                         .getStatus(),
+                                   customer.getUser()
+                                           .getFirstName(), customer.getUser()
+                                                                    .getMiddleName(), customer.getUser()
+                                                                                              .getLastName(),
                                    customer.getDateOfBirth(), customer.getEmail(), customer.getPhoneNumber(),
                                    new ResidentialAddress(customer.getResidenceCountry(), customer.getResidenceCity(),
                                                           customer.getResidencePostalCode(), customer.getResidenceAddressLine1(),
@@ -279,7 +306,8 @@ public class CustomerLifecycleService {
     private Long decodeCursor(String cursor) {
         if (cursor == null || cursor.isBlank()) return null;
         try {
-            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String decoded = new String(Base64.getUrlDecoder()
+                                              .decode(cursor), StandardCharsets.UTF_8);
             if (!decoded.matches("[1-9][0-9]*")) throw new IllegalArgumentException();
             return Long.valueOf(decoded);
         } catch (Exception exception) {
@@ -288,7 +316,10 @@ public class CustomerLifecycleService {
     }
 
     private String encodeCursor(Long id) {
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(id.toString().getBytes(StandardCharsets.UTF_8));
+        return Base64.getUrlEncoder()
+                     .withoutPadding()
+                     .encodeToString(id.toString()
+                                       .getBytes(StandardCharsets.UTF_8));
     }
 
     private String validatePhone(boolean supplied,
@@ -331,7 +362,9 @@ public class CustomerLifecycleService {
     private String required(String value,
                             int max,
                             String field) {
-        if (value == null || value.trim().isEmpty() || value.trim().length() > max) {
+        if (value == null || value.trim()
+                                  .isEmpty() || value.trim()
+                                                     .length() > max) {
             throw validation(field, "Size", "must be non-blank and at most " + max + " characters");
         }
         return value.trim();
@@ -340,8 +373,10 @@ public class CustomerLifecycleService {
     private String optional(String value,
                             int max,
                             String field) {
-        if (value == null || value.trim().isEmpty()) return null;
-        if (value.trim().length() > max) {
+        if (value == null || value.trim()
+                                  .isEmpty()) return null;
+        if (value.trim()
+                 .length() > max) {
             throw validation(field, "Size", "must be at most " + max + " characters");
         }
         return value.trim();
@@ -350,7 +385,8 @@ public class CustomerLifecycleService {
     private String country(String value,
                            String field) {
         String normalized = required(value, 2, field).toUpperCase(Locale.ROOT);
-        if (!Set.of(Locale.getISOCountries()).contains(normalized)) {
+        if (!Set.of(Locale.getISOCountries())
+                .contains(normalized)) {
             throw validation(field, "CountryCode", "must be an ISO 3166-1 alpha-2 country code");
         }
         return normalized;

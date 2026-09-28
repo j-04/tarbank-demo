@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <changeSet id="V003-account-lifecycle" author="tarbank">
+        <createSequence sequenceName="account_number_sequence" dataType="BIGINT" startValue="1" incrementBy="1"/>
+        <sql>
+            SELECT setval(
+                'account_number_sequence',
+                COALESCE((
+                    SELECT MAX(CAST(SUBSTRING(account_number FROM 3) AS BIGINT)) + 1
+                    FROM accounts
+                    WHERE account_number ~ '^TB[0-9]{14}$'
+                ), 1),
+                false
+            )
+        </sql>
+        <sql>
+            ALTER TABLE accounts
+            ADD CONSTRAINT ck_accounts_number_shape
+            CHECK (account_number ~ '^TB[0-9]{14}$')
+        </sql>
+        <sql>
+            ALTER TABLE accounts
+            ADD CONSTRAINT ck_accounts_status_metadata
+            CHECK (
+                (status_changed_by_manager_id IS NULL AND status_changed_at IS NULL)
+                OR
+                (status_changed_by_manager_id IS NOT NULL AND status_changed_at IS NOT NULL)
+            )
+        </sql>
+        <sql>
+            ALTER TABLE accounts
+            ADD CONSTRAINT ck_accounts_deactivation_metadata
+            CHECK ((status = 'DEACTIVATED') = (deactivated_at IS NOT NULL))
+        </sql>
+        <sql splitStatements="false">
+            CREATE FUNCTION reject_account_number_update()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                IF NEW.account_number IS DISTINCT FROM OLD.account_number THEN
+                    RAISE EXCEPTION 'account number is immutable' USING ERRCODE = '23514';
+                END IF;
+                RETURN NEW;
+            END;
+            $$
+        </sql>
+        <sql>
+            CREATE TRIGGER trg_accounts_number_immutable
+            BEFORE UPDATE OF account_number ON accounts
+            FOR EACH ROW
+            EXECUTE FUNCTION reject_account_number_update()
+        </sql>
+    </changeSet>
+</databaseChangeLog>

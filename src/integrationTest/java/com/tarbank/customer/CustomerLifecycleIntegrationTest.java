@@ -28,9 +28,11 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -55,7 +57,7 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
-    @Autowired
+    @MockitoSpyBean
     private PasswordEncoder passwordEncoder;
 
     @MockitoSpyBean
@@ -115,7 +117,7 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
         Long id = createCustomer("statusflow", "S1000001");
         var customer = customers.findById(id).orElseThrow();
         var manager = managers.findById(managerId()).orElseThrow();
-        AccountEntity account = accounts.saveAndFlush(new AccountEntity("TB00000000000001", customer, Currency.EUR, manager, Instant.now()));
+        AccountEntity account = accounts.saveAndFlush(new AccountEntity("TB90000000000001", customer, Currency.EUR, manager, Instant.now()));
         String customerToken = login("statusflow", "StrongPwd123");
         String managerToken = login("manager", "TestPass123!");
 
@@ -279,12 +281,92 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void concurrentProfileUpdatePreservesCompletedPasswordReset() throws Exception {
+        Long id = createCustomer("resetprofilelock", "C1000004");
+        String manager = login("manager", "TestPass123!");
+        String oldToken = login("resetprofilelock", "StrongPwd123");
+        CountDownLatch encoderEntered = new CountDownLatch(1);
+        CountDownLatch releaseEncoder = new CountDownLatch(1);
+        pausePasswordEncoding("NameReset12!", encoderEntered, releaseEncoder);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var resetRequest = executor.submit(() -> resetPassword(
+                    id, UUID.randomUUID().toString(), "NameReset12!", manager)
+                    .andReturn().getResponse().getStatus());
+            assertThat(encoderEntered.await(10, TimeUnit.SECONDS)).isTrue();
+            var profileRequest = executor.submit(() -> mvc.perform(patch("/api/v1/customers/{id}", id)
+                            .header("Authorization", "Bearer " + manager)
+                            .header("If-Match", "customer-v0")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"firstName\":\"Renamed\"}"))
+                    .andReturn().getResponse().getStatus());
+            try {
+                assertThat(awaitCustomerRowLockWait()).isTrue();
+            } finally {
+                releaseEncoder.countDown();
+            }
+            assertThat(resetRequest.get(10, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(profileRequest.get(10, TimeUnit.SECONDS)).isEqualTo(200);
+        } finally {
+            releaseEncoder.countDown();
+            reset(passwordEncoder);
+        }
+
+        var user = customers.findById(id).orElseThrow().getUser();
+        assertThat(user.getFirstName()).isEqualTo("Renamed");
+        assertThat(user.getCredentialVersion()).isEqualTo(1);
+        assertThat(passwordEncoder.matches("NameReset12!", user.getPasswordHash())).isTrue();
+        assertThat(passwordEncoder.matches("StrongPwd123", user.getPasswordHash())).isFalse();
+        mvc.perform(get("/api/v1/accounts").header("Authorization", "Bearer " + oldToken))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void concurrentCustomerStatusChangePreservesCompletedPasswordReset() throws Exception {
+        Long id = createCustomer("resetstatuslock", "C1000005");
+        String manager = login("manager", "TestPass123!");
+        String oldToken = login("resetstatuslock", "StrongPwd123");
+        CountDownLatch encoderEntered = new CountDownLatch(1);
+        CountDownLatch releaseEncoder = new CountDownLatch(1);
+        pausePasswordEncoding("StateReset1!", encoderEntered, releaseEncoder);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var resetRequest = executor.submit(() -> resetPassword(
+                    id, UUID.randomUUID().toString(), "StateReset1!", manager)
+                    .andReturn().getResponse().getStatus());
+            assertThat(encoderEntered.await(10, TimeUnit.SECONDS)).isTrue();
+            var statusRequest = executor.submit(() -> patchStatus(
+                    id, "customer-v0", "BLOCKED", manager).andReturn().getResponse().getStatus());
+            try {
+                assertThat(awaitCustomerRowLockWait()).isTrue();
+            } finally {
+                releaseEncoder.countDown();
+            }
+            assertThat(resetRequest.get(10, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(statusRequest.get(10, TimeUnit.SECONDS)).isEqualTo(200);
+        } finally {
+            releaseEncoder.countDown();
+            reset(passwordEncoder);
+        }
+
+        var customer = customers.findById(id).orElseThrow();
+        assertThat(customer.getUser().getStatus().name()).isEqualTo("BLOCKED");
+        assertThat(customer.getUser().getCredentialVersion()).isEqualTo(1);
+        assertThat(passwordEncoder.matches("StateReset1!", customer.getUser().getPasswordHash())).isTrue();
+        assertThat(passwordEncoder.matches("StrongPwd123", customer.getUser().getPasswordHash())).isFalse();
+
+        patchStatus(id, "customer-v1", "ACTIVE", manager).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/accounts").header("Authorization", "Bearer " + oldToken))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void customerAccountAndAuditChangesRollBackTogether() throws Exception {
         Long id = createCustomer("rollbackflow", "C1000003");
         var customer = customers.findById(id).orElseThrow();
         var manager = managers.findById(managerId()).orElseThrow();
         AccountEntity account = accounts.saveAndFlush(
-                new AccountEntity("TB00000000000002", customer, Currency.USD, manager, Instant.now()));
+                new AccountEntity("TB90000000000002", customer, Currency.USD, manager, Instant.now()));
         String managerToken = login("manager", "TestPass123!");
         int auditCount = jdbc.queryForObject("select count(*) from audit_events", Integer.class);
 
@@ -302,6 +384,34 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
         assertThat(reloaded.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(reloaded.getManagementVersion()).isZero();
         assertThat(jdbc.queryForObject("select count(*) from audit_events", Integer.class)).isEqualTo(auditCount);
+    }
+
+    private void pausePasswordEncoding(String password,
+                                       CountDownLatch entered,
+                                       CountDownLatch release) {
+        doAnswer(invocation -> {
+            if (password.contentEquals(invocation.getArgument(0, CharSequence.class))) {
+                entered.countDown();
+                if (!release.await(15, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to release password encoding.");
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(passwordEncoder).encode(any(CharSequence.class));
+    }
+
+    private boolean awaitCustomerRowLockWait() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
+        while (System.nanoTime() < deadline) {
+            Integer waiting = jdbc.queryForObject(
+                    "select count(*) from pg_stat_activity "
+                            + "where datname=current_database() and wait_event_type='Lock' "
+                            + "and lower(query) like '%select user_id from customers%'",
+                    Integer.class);
+            if (waiting != null && waiting > 0) return true;
+            Thread.sleep(25);
+        }
+        return false;
     }
 
     private String requestFingerprint(String key) {

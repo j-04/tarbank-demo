@@ -32,7 +32,8 @@ public class ApiSecurityErrorWriter {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         ApiErrorResponse error = new ApiErrorResponse(
                 new ApiErrorResponse.ErrorDetails(code, message, List.of()), correlationId);
-        response.getOutputStream().print(jsonMapper.writeValueAsString(error));
+        response.getOutputStream()
+                .print(jsonMapper.writeValueAsString(error));
         response.flushBuffer();
     }
 }

@@ -57,7 +57,7 @@ public class CustomerController {
             @Valid @RequestBody CreateCustomerRequest request) {
         var result = onboarding.create(principal, parseKey(key), request);
         return ResponseEntity.status(result.status())
-                .body(new ApiSuccessResponse<>(result.body(), CorrelationIdContext.current()));
+                             .body(new ApiSuccessResponse<>(result.body(), CorrelationIdContext.current()));
     }
 
     @GetMapping
@@ -71,8 +71,9 @@ public class CustomerController {
     @GetMapping("/{customerId}")
     public ResponseEntity<ApiSuccessResponse<CustomerDetails>> get(@PathVariable Long customerId) {
         var result = lifecycle.find(customerId);
-        return ResponseEntity.ok().eTag(etag(result.version()))
-                .body(new ApiSuccessResponse<>(result.customer(), CorrelationIdContext.current()));
+        return ResponseEntity.ok()
+                             .eTag(etag(result.version()))
+                             .body(new ApiSuccessResponse<>(result.customer(), CorrelationIdContext.current()));
     }
 
     @PatchMapping("/{customerId}")
@@ -82,8 +83,9 @@ public class CustomerController {
             @AuthenticationPrincipal TarbankPrincipal principal,
             @Valid @RequestBody UpdateCustomerRequest request) {
         var result = lifecycle.update(customerId, parseIfMatch(ifMatch), request, principal);
-        return ResponseEntity.ok().eTag(etag(result.version()))
-                .body(new ApiSuccessResponse<>(result.customer(), CorrelationIdContext.current()));
+        return ResponseEntity.ok()
+                             .eTag(etag(result.version()))
+                             .body(new ApiSuccessResponse<>(result.customer(), CorrelationIdContext.current()));
     }
 
     @PatchMapping("/{customerId}/status")
@@ -93,8 +95,9 @@ public class CustomerController {
             @AuthenticationPrincipal TarbankPrincipal principal,
             @Valid @RequestBody ChangeCustomerStatusRequest request) {
         var result = lifecycle.changeStatus(customerId, parseIfMatch(ifMatch), request, principal);
-        return ResponseEntity.ok().eTag(etag(result.version()))
-                .body(new ApiSuccessResponse<>(result.response(), CorrelationIdContext.current()));
+        return ResponseEntity.ok()
+                             .eTag(etag(result.version()))
+                             .body(new ApiSuccessResponse<>(result.response(), CorrelationIdContext.current()));
     }
 
     @PostMapping("/{customerId}/password-reset")
@@ -105,12 +108,13 @@ public class CustomerController {
             @Valid @RequestBody PasswordResetRequest request) {
         var result = lifecycle.resetPassword(customerId, principal, parseKey(key), request);
         return ResponseEntity.status(result.status())
-                .body(new ApiSuccessResponse<>(result.body(), CorrelationIdContext.current()));
+                             .body(new ApiSuccessResponse<>(result.body(), CorrelationIdContext.current()));
     }
 
     private UUID parseKey(String value) {
         try {
-            if (value == null || !UUID_V4.matcher(value).matches()) throw new IllegalArgumentException();
+            if (value == null || !UUID_V4.matcher(value)
+                                         .matches()) throw new IllegalArgumentException();
             UUID key = UUID.fromString(value);
             if (key.version() != 4 || key.variant() != 2) throw new IllegalArgumentException();
             return key;

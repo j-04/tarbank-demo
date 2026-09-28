@@ -26,7 +26,7 @@ class MigrationIntegrationTest extends AbstractIntegrationTest {
     @Test
     void appliesTheIdentityAndOnboardingSchemaToAFreshPostgreSqlDatabase() {
         assertThat(publicTables()).containsExactly("accounts", "api_request_idempotency", "audit_events", "customers", "databasechangelog", "databasechangeloglock", "managers", "users");
-        assertThat(changelogEntryCount()).isEqualTo(2);
+        assertThat(changelogEntryCount()).isEqualTo(3);
     }
 
     @Test

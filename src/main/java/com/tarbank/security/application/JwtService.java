@@ -30,7 +30,8 @@ public class JwtService {
     public IssuedToken issue(Long userId,
                              Role role,
                              int credentialVersion) {
-        Instant expires = Instant.now().plus(properties.accessTokenTtl());
+        Instant expires = Instant.now()
+                                 .plus(properties.accessTokenTtl());
         UUID jti = UUID.randomUUID();
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("iss", properties.issuer());
@@ -38,7 +39,8 @@ public class JwtService {
         claims.put("role", role.name());
         claims.put("jti", jti.toString());
         claims.put("credentialVersion", credentialVersion);
-        claims.put("iat", Instant.now().getEpochSecond());
+        claims.put("iat", Instant.now()
+                                 .getEpochSecond());
         claims.put("exp", expires.getEpochSecond());
         return new IssuedToken(compact(claims), jti, expires);
     }
@@ -51,9 +53,11 @@ public class JwtService {
             Map<?, ?> header = jsonMapper.readValue(decode(parts[0]), Map.class);
             if (!"HS256".equals(header.get("alg"))) throw new IllegalArgumentException();
             Map<?, ?> c = jsonMapper.readValue(decode(parts[1]), Map.class);
-            if (!properties.issuer().equals(c.get("iss"))) throw new IllegalArgumentException();
+            if (!properties.issuer()
+                           .equals(c.get("iss"))) throw new IllegalArgumentException();
             long exp = number(c.get("exp")).longValue();
-            if (Instant.now().getEpochSecond() >= exp) throw new IllegalArgumentException();
+            if (Instant.now()
+                       .getEpochSecond() >= exp) throw new IllegalArgumentException();
             return new TarbankPrincipal(Long.valueOf(String.valueOf(c.get("sub"))), Role.valueOf(String.valueOf(c.get("role"))), UUID.fromString(String.valueOf(c.get("jti"))), number(c.get("credentialVersion")).intValue(), Instant.ofEpochSecond(exp));
         } catch (Exception ex) {
             throw new IllegalArgumentException("Invalid access token.");
@@ -73,19 +77,25 @@ public class JwtService {
     private String sign(String body) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(properties.signingKey().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(mac.doFinal(body.getBytes(StandardCharsets.US_ASCII)));
+            mac.init(new SecretKeySpec(properties.signingKey()
+                                                 .getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return Base64.getUrlEncoder()
+                         .withoutPadding()
+                         .encodeToString(mac.doFinal(body.getBytes(StandardCharsets.US_ASCII)));
         } catch (Exception e) {
             throw new IllegalStateException("Token signing is unavailable.", e);
         }
     }
 
     private String encode(String value) {
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+        return Base64.getUrlEncoder()
+                     .withoutPadding()
+                     .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private String decode(String value) {
-        return new String(Base64.getUrlDecoder().decode(value), StandardCharsets.UTF_8);
+        return new String(Base64.getUrlDecoder()
+                                .decode(value), StandardCharsets.UTF_8);
     }
 
     private boolean constantTime(String a,

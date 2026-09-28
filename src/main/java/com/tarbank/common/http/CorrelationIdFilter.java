@@ -61,7 +61,8 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         if (suppliedValue == null) {
             return UUID.randomUUID();
         }
-        if (!UUID_HEADER_PATTERN.matcher(suppliedValue).matches()) {
+        if (!UUID_HEADER_PATTERN.matcher(suppliedValue)
+                                .matches()) {
             throw new IllegalArgumentException("Invalid correlation ID format.");
         }
         return UUID.fromString(suppliedValue);
@@ -74,7 +75,8 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         response.resetBuffer();
         response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.getOutputStream().print(jsonMapper.writeValueAsString(error));
+        response.getOutputStream()
+                .print(jsonMapper.writeValueAsString(error));
         response.flushBuffer();
     }
 }

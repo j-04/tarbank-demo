@@ -1,9 +1,7 @@
 package com.tarbank.customer.persistence;
 
 import com.tarbank.customer.domain.CustomerEntity;
-import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,9 +14,8 @@ public interface CustomerRepository extends JpaRepository<CustomerEntity, Long> 
             String country,
             String hash);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select customer from CustomerEntity customer join fetch customer.user where customer.userId = :id")
-    Optional<CustomerEntity> lockById(@Param("id") Long id);
+    @Query(value = "select user_id from customers where user_id = :id for update", nativeQuery = true)
+    Optional<Long> lockRowById(@Param("id") Long id);
 
     @Modifying
     @Query(value = "update customers set version = version + 1 where user_id = :id and version = :expectedVersion",

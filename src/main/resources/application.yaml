@@ -60,6 +60,14 @@ tarbank:
     retention: PT24H
     lock-timeout: PT5S
     request-fingerprint-hmac-key: ${TARBANK_IDEMPOTENCY_FINGERPRINT_HMAC_KEY:}
+  account:
+    default-limits:
+      EUR:
+        withdrawal: 1000.0000
+        transfer: 1000.0000
+      USD:
+        withdrawal: 1000.0000
+        transfer: 1000.0000
   manager-seed:
     managers:
       - username: ${TARBANK_MANAGER_USERNAME}

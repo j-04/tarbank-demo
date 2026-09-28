@@ -25,10 +25,11 @@ public class CustomerQueryRepository {
         if (status != null) predicate.and(customer.user.status.eq(status));
         if (afterCustomerId != null) predicate.and(customer.userId.gt(afterCustomerId));
         return queries.selectFrom(customer)
-                .join(customer.user).fetchJoin()
-                .where(predicate)
-                .orderBy(customer.userId.asc())
-                .limit(size)
-                .fetch();
+                      .join(customer.user)
+                      .fetchJoin()
+                      .where(predicate)
+                      .orderBy(customer.userId.asc())
+                      .limit(size)
+                      .fetch();
     }
 }

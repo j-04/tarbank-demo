@@ -27,7 +27,9 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiSuccessResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         var token = auth.login(request.username(), request.password());
-        return ResponseEntity.ok(new ApiSuccessResponse<>(new LoginResponse(token.value(), "Bearer", token.expiresAt().getEpochSecond() - java.time.Instant.now().getEpochSecond()), CorrelationIdContext.current()));
+        return ResponseEntity.ok(new ApiSuccessResponse<>(new LoginResponse(token.value(), "Bearer", token.expiresAt()
+                                                                                                          .getEpochSecond() - java.time.Instant.now()
+                                                                                                                                               .getEpochSecond()), CorrelationIdContext.current()));
     }
 
     @PostMapping("/logout")

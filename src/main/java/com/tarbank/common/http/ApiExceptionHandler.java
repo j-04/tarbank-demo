@@ -34,42 +34,46 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiErrorResponse> validation(Exception exception) {
         List<ApiErrorResponse.FieldError> fieldErrors = new ArrayList<>();
         if (exception instanceof MethodArgumentNotValidException validationException) {
-            for (FieldError fieldError : validationException.getBindingResult().getFieldErrors()) {
+            for (FieldError fieldError : validationException.getBindingResult()
+                                                            .getFieldErrors()) {
                 fieldErrors.add(new ApiErrorResponse.FieldError(
                         fieldError.getField(), fieldError.getCode(), fieldError.getDefaultMessage()));
             }
         }
-        return ResponseEntity.badRequest().body(ApiErrorResponses.validation(correlationId(), fieldErrors));
+        return ResponseEntity.badRequest()
+                             .body(ApiErrorResponses.validation(correlationId(), fieldErrors));
     }
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiErrorResponse> known(ApiException exception) {
         LOGGER.warn("internalCode={} publicErrorCode={} httpStatus={} correlationId={}",
-                    exception.getInternalCode(), exception.getCode(), exception.getStatus().value(), correlationId());
+                    exception.getInternalCode(), exception.getCode(), exception.getStatus()
+                                                                               .value(), correlationId());
         return ResponseEntity.status(exception.getStatus())
-                .body(ApiErrorResponses.error(correlationId(), exception.getCode(), exception.getSafeMessage(),
-                                              exception.getFieldErrors()));
+                             .body(ApiErrorResponses.error(correlationId(), exception.getCode(), exception.getSafeMessage(),
+                                                           exception.getFieldErrors()));
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<ApiErrorResponse> invalidCredentials() {
         LOGGER.warn("internalCode=TAR-AUTH-001 publicErrorCode=INVALID_CREDENTIALS httpStatus=401 correlationId={}", correlationId());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiErrorResponses.error(correlationId(), "INVALID_CREDENTIALS", "Invalid credentials."));
+                             .body(ApiErrorResponses.error(correlationId(), "INVALID_CREDENTIALS", "Invalid credentials."));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiErrorResponse> method() {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
-                .body(ApiErrorResponses.validation(correlationId(), List.of()));
+                             .body(ApiErrorResponses.validation(correlationId(), List.of()));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> unexpected(Exception exception) {
         LOGGER.error("internalCode=TAR-INFRA-001 publicErrorCode=INTERNAL_ERROR httpStatus=500 exceptionType={} correlationId={}",
-                     exception.getClass().getName(), correlationId());
+                     exception.getClass()
+                              .getName(), correlationId());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiErrorResponses.internalError(correlationId()));
+                             .body(ApiErrorResponses.internalError(correlationId()));
     }
 
     private UUID correlationId() {

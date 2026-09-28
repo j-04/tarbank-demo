@@ -62,11 +62,13 @@ public class RequestIdempotencyService {
                                  int successStatus,
                                  Supplier<T> firstExecution) {
         try {
-            entityManager.createNativeQuery("set local lock_timeout = '" + properties.lockTimeout().toMillis() + "ms'")
-                    .executeUpdate();
+            entityManager.createNativeQuery("set local lock_timeout = '" + properties.lockTimeout()
+                                                                                     .toMillis() + "ms'")
+                         .executeUpdate();
             Instant now = Instant.now();
             records.insertInProgress(actor.getId(), operation, scope, key, requestHash, now.plus(properties.retention()), now);
-            var record = records.findForUpdate(actor.getId(), operation, scope, key).orElseThrow(this::inProgress);
+            var record = records.findForUpdate(actor.getId(), operation, scope, key)
+                                .orElseThrow(this::inProgress);
             if (!matches(record.getRequestHash(), requestHash)) {
                 if (legacyRequestHash == null || !matches(record.getRequestHash(), legacyRequestHash)) {
                     throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",

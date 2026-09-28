@@ -58,7 +58,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
         try {
             TarbankPrincipal principal = jwt.verify(header.substring(7));
-            var user = users.findById(principal.userId()).orElseThrow(IllegalArgumentException::new);
+            var user = users.findById(principal.userId())
+                            .orElseThrow(IllegalArgumentException::new);
             if (user.getStatus() != UserStatus.ACTIVE || !profiles.matches(user)) {
                 errors.write(response, HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.");
                 return;
@@ -68,8 +69,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 throw new IllegalArgumentException();
             }
             var authentication = UsernamePasswordAuthenticationToken.authenticated(principal, null,
-                                                                                   List.of(new SimpleGrantedAuthority("ROLE_" + principal.role().name())));
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+                                                                                   List.of(new SimpleGrantedAuthority("ROLE_" + principal.role()
+                                                                                                                                         .name())));
+            SecurityContextHolder.getContext()
+                                 .setAuthentication(authentication);
             chain.doFilter(request, response);
         } catch (Exception exception) {
             SecurityContextHolder.clearContext();

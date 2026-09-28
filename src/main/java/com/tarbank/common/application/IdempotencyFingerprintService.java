@@ -34,14 +34,16 @@ public class IdempotencyFingerprintService {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(
-                    properties.requestFingerprintHmacKey().getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
+                    properties.requestFingerprintHmacKey()
+                              .getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
             mac.update(DOMAIN);
             mac.update((byte) 0);
             mac.update(operation.getBytes(StandardCharsets.UTF_8));
             mac.update((byte) 0);
             mac.update(scope.getBytes(StandardCharsets.UTF_8));
             mac.update((byte) 0);
-            return HexFormat.of().formatHex(mac.doFinal(credential.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of()
+                            .formatHex(mac.doFinal(credential.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) {
             throw new IllegalStateException("Idempotency fingerprinting is unavailable.", exception);
         }
@@ -49,8 +51,10 @@ public class IdempotencyFingerprintService {
 
     private String legacySha256(String credential) {
         try {
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(credential.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of()
+                            .formatHex(
+                                    MessageDigest.getInstance("SHA-256")
+                                                 .digest(credential.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) {
             throw new IllegalStateException("Legacy idempotency fingerprinting is unavailable.", exception);
         }
