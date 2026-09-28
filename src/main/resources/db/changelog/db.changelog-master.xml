@@ -5,4 +5,5 @@
     <include file="db/changelog/changesets/V001__identity-and-onboarding.xml"/>
     <include file="db/changelog/changesets/V002__customer-lifecycle-account-baseline.xml"/>
     <include file="db/changelog/changesets/V003__account-lifecycle.xml"/>
+    <include file="db/changelog/changesets/V004__money-operation-core.xml"/>
 </databaseChangeLog>

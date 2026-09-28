@@ -50,6 +50,11 @@ class BootstrapSecurityConfiguration {
                                                 .authenticated()
                                                 .requestMatchers("/api/v1/customers/**")
                                                 .hasRole("MANAGER")
+                                                .requestMatchers(HttpMethod.POST,
+                                                                 "/api/v1/accounts/*/deposits",
+                                                                 "/api/v1/accounts/*/withdrawals",
+                                                                 "/api/v1/accounts/*/transfers")
+                                                .hasRole("CUSTOMER")
                                                 .requestMatchers(HttpMethod.PATCH, "/api/v1/accounts/*/status")
                                                 .hasRole("MANAGER")
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/accounts")

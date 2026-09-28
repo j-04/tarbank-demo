@@ -60,6 +60,7 @@ When creating an account, select one supported currency. The account starts with
 
 - Support EUR and USD.
 - Use `DECIMAL(19, 4)` value precision for avoiding floating-point rounding errors.
+- An account balance cannot exceed the maximum representable `DECIMAL(19, 4)` value, `999999999999999.9999`; a credit that would exceed it is rejected.
 - Amounts cannot be below zero. Deposits, withdrawals, and transfers of zero are not permitted; every money-moving operation requires a positive amount.
 - Cross-currency deposits, withdrawals, and transfers are not supported, but the code must support future integration of that feature.
 

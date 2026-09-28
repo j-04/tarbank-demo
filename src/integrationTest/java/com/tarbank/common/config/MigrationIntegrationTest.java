@@ -19,14 +19,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class MigrationIntegrationTest extends AbstractIntegrationTest {
+    private static final List<String> EXPECTED_PUBLIC_TABLES = List.of(
+            "accounts", "api_request_idempotency", "audit_events", "customers", "daily_limit_usage",
+            "databasechangelog", "databasechangeloglock", "managers", "money_operation_idempotency",
+            "transaction_entries", "transactions", "users");
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Test
     void appliesTheIdentityAndOnboardingSchemaToAFreshPostgreSqlDatabase() {
-        assertThat(publicTables()).containsExactly("accounts", "api_request_idempotency", "audit_events", "customers", "databasechangelog", "databasechangeloglock", "managers", "users");
-        assertThat(changelogEntryCount()).isEqualTo(3);
+        assertThat(publicTables()).containsExactlyElementsOf(EXPECTED_PUBLIC_TABLES);
+        assertThat(changelogEntryCount()).isEqualTo(4);
     }
 
     @Test
@@ -38,7 +42,7 @@ class MigrationIntegrationTest extends AbstractIntegrationTest {
         }
 
         assertThat(changelogEntryCount()).isEqualTo(changelogEntriesBeforeRestart);
-        assertThat(publicTables()).containsExactly("accounts", "api_request_idempotency", "audit_events", "customers", "databasechangelog", "databasechangeloglock", "managers", "users");
+        assertThat(publicTables()).containsExactlyElementsOf(EXPECTED_PUBLIC_TABLES);
     }
 
     @Test
@@ -47,7 +51,7 @@ class MigrationIntegrationTest extends AbstractIntegrationTest {
                 "spring.liquibase.change-log", "classpath:db/changelog/missing-changelog.xml")))
                 .hasStackTraceContaining("missing-changelog.xml");
 
-        assertThat(publicTables()).containsExactly("accounts", "api_request_idempotency", "audit_events", "customers", "databasechangelog", "databasechangeloglock", "managers", "users");
+        assertThat(publicTables()).containsExactlyElementsOf(EXPECTED_PUBLIC_TABLES);
     }
 
     @Test
