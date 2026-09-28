@@ -9,6 +9,24 @@ spring:
     enabled: true
 
 tarbank:
+  cleanup:
+    enabled: false
+  rate-limit:
+    anonymous:
+      capacity: 100000
+      refill-tokens-per-second: 100000.0
+    login-ip:
+      capacity: 100000
+      refill-tokens-per-second: 100000.0
+    login-username:
+      capacity: 100000
+      refill-tokens-per-second: 100000.0
+    authenticated:
+      capacity: 100000
+      refill-tokens-per-second: 100000.0
+    money-account:
+      capacity: 100000
+      refill-tokens-per-second: 100000.0
   jwt:
     issuer: tarbank-test
     signing-key: test-only-jwt-signing-key-must-not-be-used-outside-tests

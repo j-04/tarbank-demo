@@ -2,7 +2,6 @@ package com.tarbank.security.application;
 
 import com.tarbank.security.domain.UserStatus;
 import com.tarbank.security.persistence.UserRepository;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -16,14 +15,14 @@ public class AuthService {
 
     private final JwtService jwt;
 
-    private final StringRedisTemplate redis;
+    private final RedisSecurityStore redis;
 
     private final IdentityProfileValidator profiles;
 
     public AuthService(UserRepository users,
                        PasswordEncoder passwords,
                        JwtService jwt,
-                       StringRedisTemplate redis,
+                       RedisSecurityStore redis,
                        IdentityProfileValidator profiles) {
         this.users = users;
         this.passwords = passwords;
@@ -46,8 +45,7 @@ public class AuthService {
     public void logout(TarbankPrincipal principal) {
         Duration remaining = Duration.between(java.time.Instant.now(), principal.expiresAt());
         if (!remaining.isNegative() && !remaining.isZero()) {
-            redis.opsForValue()
-                 .set("jwt:invalidated:" + principal.tokenId(), "1", remaining);
+            redis.invalidate(principal.tokenId(), remaining);
         }
     }
 

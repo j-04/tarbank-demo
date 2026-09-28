@@ -2,10 +2,11 @@
 <Configuration status="WARN">
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern="%d{ISO8601} %-5level correlationId=%X{correlationId} %logger{36} - %msg%n"/>
+            <PatternLayout pattern='{"timestamp":"%d{ISO8601}","level":"%p","correlationId":"%enc{%X{correlationId}}{JSON}","internalCode":"%enc{%X{internalCode}}{JSON}","publicErrorCode":"%enc{%X{publicErrorCode}}{JSON}","httpStatus":"%enc{%X{httpStatus}}{JSON}","operationType":"%enc{%X{operationType}}{JSON}","outcome":"%enc{%X{outcome}}{JSON}","logger":"%enc{%c{1}}{JSON}","message":"%enc{%m}{JSON}"}%n'/>
         </Console>
     </Appenders>
     <Loggers>
+        <Logger name="org.hibernate.orm.connections.pooling" level="WARN"/>
         <Root level="INFO">
             <AppenderRef ref="Console"/>
         </Root>

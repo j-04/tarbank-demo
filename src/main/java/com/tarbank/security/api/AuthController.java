@@ -2,8 +2,10 @@ package com.tarbank.security.api;
 
 import com.tarbank.common.api.ApiSuccessResponse;
 import com.tarbank.common.http.CorrelationIdContext;
+import com.tarbank.common.resilience.RateLimitService;
 import com.tarbank.security.application.AuthService;
 import com.tarbank.security.application.TarbankPrincipal;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
@@ -20,12 +22,19 @@ import java.util.Map;
 public class AuthController {
     private final AuthService auth;
 
-    public AuthController(AuthService auth) {
+    private final RateLimitService rateLimits;
+
+    public AuthController(AuthService auth,
+                          RateLimitService rateLimits) {
         this.auth = auth;
+        this.rateLimits = rateLimits;
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiSuccessResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<ApiSuccessResponse<LoginResponse>> login(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest) {
+        rateLimits.checkLogin(httpRequest.getRemoteAddr(), request.username());
         var token = auth.login(request.username(), request.password());
         return ResponseEntity.ok(new ApiSuccessResponse<>(new LoginResponse(token.value(), "Bearer", token.expiresAt()
                                                                                                           .getEpochSecond() - java.time.Instant.now()

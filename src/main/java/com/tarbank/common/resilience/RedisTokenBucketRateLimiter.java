@@ -1,0 +1,90 @@
+package com.tarbank.common.resilience;
+
+import com.tarbank.common.config.RateLimitProperties.Policy;
+import com.tarbank.common.http.DependencyUnavailableException;
+import com.tarbank.common.http.CorrelationIdContext;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.stereotype.Component;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.List;
+
+@Component
+public class RedisTokenBucketRateLimiter {
+    private static final String SCRIPT = """
+            local key = KEYS[1]
+            local capacity = tonumber(ARGV[1])
+            local refill_per_ms = tonumber(ARGV[2]) / 1000.0
+            local current = redis.call('TIME')
+            local now_ms = tonumber(current[1]) * 1000 + math.floor(tonumber(current[2]) / 1000)
+            local state = redis.call('HMGET', key, 'tokens', 'updated_at')
+            local tokens = tonumber(state[1])
+            local updated_at = tonumber(state[2])
+            if tokens == nil then tokens = capacity end
+            if updated_at == nil then updated_at = now_ms end
+            local elapsed = math.max(0, now_ms - updated_at)
+            tokens = math.min(capacity, tokens + elapsed * refill_per_ms)
+            local allowed = 0
+            local retry_ms = 0
+            if tokens >= 1.0 then
+                allowed = 1
+                tokens = tokens - 1.0
+            else
+                retry_ms = math.ceil((1.0 - tokens) / refill_per_ms)
+            end
+            redis.call('HSET', key, 'tokens', tostring(tokens), 'updated_at', tostring(now_ms))
+            local ttl_ms = math.max(1000, math.ceil((capacity / refill_per_ms) * 2))
+            redis.call('PEXPIRE', key, ttl_ms)
+            return {allowed, retry_ms}
+            """;
+
+    private final StringRedisTemplate redis;
+    private final ObservationRegistry observations;
+    private final DefaultRedisScript<List> script = new DefaultRedisScript<>(SCRIPT, List.class);
+
+    public RedisTokenBucketRateLimiter(StringRedisTemplate redis,
+                                       ObservationRegistry observations) {
+        this.redis = redis;
+        this.observations = observations;
+    }
+
+    public Decision consume(String group, String identifier, Policy policy) {
+        String key = "rate-limit:" + group + ":" + sha256(identifier);
+        Observation observation = Observation.createNotStarted("tarbank.redis", observations)
+                                             .lowCardinalityKeyValue("operation", "rate_limit");
+        if (CorrelationIdContext.current() != null) {
+            observation.highCardinalityKeyValue(
+                    "correlation.id", CorrelationIdContext.current().toString());
+        }
+        try {
+            List<?> result = observation.observe(() -> redis.execute(
+                    script, List.of(key), Integer.toString(policy.capacity()),
+                    Double.toString(policy.refillTokensPerSecond())));
+            if (result == null || result.size() != 2) throw new DependencyUnavailableException();
+            boolean allowed = ((Number) result.getFirst()).longValue() == 1;
+            long retryMillis = ((Number) result.get(1)).longValue();
+            return new Decision(allowed, allowed ? 0 : Math.max(1, (retryMillis + 999) / 1000));
+        } catch (DataAccessException exception) {
+            throw new DependencyUnavailableException();
+        }
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                                         .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Rate-limit key hashing is unavailable.", exception);
+        }
+    }
+
+    public record Decision(boolean allowed, long retryAfterSeconds) {
+    }
+}

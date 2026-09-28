@@ -66,6 +66,11 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected ConfigurableApplicationContext startApplication(Map<String, Object> overrides) {
+        return startApplication(overrides, WebApplicationType.NONE);
+    }
+
+    protected ConfigurableApplicationContext startApplication(Map<String, Object> overrides,
+                                                              WebApplicationType webApplicationType) {
         Map<String, Object> properties = new HashMap<>();
         properties.put("tarbank.database.url", POSTGRES.getJdbcUrl());
         properties.put("tarbank.database.username", POSTGRES.getUsername());
@@ -87,7 +92,7 @@ public abstract class AbstractIntegrationTest {
                                                    .toArray(String[]::new);
 
         return new SpringApplicationBuilder(TarbankApplication.class)
-                .web(WebApplicationType.NONE)
+                .web(webApplicationType)
                 .profiles("test")
                 .run(commandLineProperties);
     }

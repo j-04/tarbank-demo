@@ -3,6 +3,7 @@ package com.tarbank.money.api;
 import com.tarbank.account.domain.Currency;
 import com.tarbank.common.api.ApiSuccessResponse;
 import com.tarbank.common.http.CorrelationIdContext;
+import com.tarbank.money.application.MoneyOperationOrchestrator;
 import com.tarbank.money.application.MoneyOperationService;
 import com.tarbank.security.application.TarbankPrincipal;
 import jakarta.validation.Valid;
@@ -30,9 +31,9 @@ public class MoneyOperationController {
     private static final java.util.regex.Pattern UUID_V4 = java.util.regex.Pattern.compile(
             "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
 
-    private final MoneyOperationService operations;
+    private final MoneyOperationOrchestrator operations;
 
-    public MoneyOperationController(MoneyOperationService operations) {
+    public MoneyOperationController(MoneyOperationOrchestrator operations) {
         this.operations = operations;
     }
 

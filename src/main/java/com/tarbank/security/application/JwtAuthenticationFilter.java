@@ -7,12 +7,13 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -24,7 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final UserRepository users;
 
-    private final StringRedisTemplate redis;
+    private final RedisSecurityStore redis;
 
     private final ApiSecurityErrorWriter errors;
 
@@ -32,7 +33,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     public JwtAuthenticationFilter(JwtService jwt,
                                    UserRepository users,
-                                   StringRedisTemplate redis,
+                                   RedisSecurityStore redis,
                                    ApiSecurityErrorWriter errors,
                                    IdentityProfileValidator profiles) {
         this.jwt = jwt;
@@ -65,7 +66,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
             if (user.getCredentialVersion() != principal.credentialVersion()
-                    || Boolean.TRUE.equals(redis.hasKey("jwt:invalidated:" + principal.tokenId()))) {
+                    || redis.isInvalidated(principal.tokenId())) {
                 throw new IllegalArgumentException();
             }
             var authentication = UsernamePasswordAuthenticationToken.authenticated(principal, null,
@@ -74,6 +75,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext()
                                  .setAuthentication(authentication);
             chain.doFilter(request, response);
+        } catch (DataAccessException | CannotCreateTransactionException exception) {
+            SecurityContextHolder.clearContext();
+            errors.write(response, HttpStatus.SERVICE_UNAVAILABLE, "DEPENDENCY_UNAVAILABLE",
+                         "A required service is temporarily unavailable.");
         } catch (Exception exception) {
             SecurityContextHolder.clearContext();
             errors.write(response, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication is required.");

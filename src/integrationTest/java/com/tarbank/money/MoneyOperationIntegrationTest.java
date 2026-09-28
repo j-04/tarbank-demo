@@ -1,9 +1,17 @@
 package com.tarbank.money;
 
+import com.tarbank.common.application.RetentionCleanupService;
+import com.tarbank.common.config.FailureSimulationProperties;
+import com.tarbank.common.resilience.FailurePoint;
+import com.tarbank.common.resilience.FailureSimulator;
+import com.tarbank.common.resilience.FailureSimulator.Execution;
+import com.tarbank.common.resilience.SimulatedFailureException;
 import com.tarbank.money.application.MoneyOperationService;
 import com.tarbank.money.application.NotificationService;
+import com.tarbank.money.domain.TransactionType;
 import com.tarbank.money.persistence.MoneyQueryRepository;
 import com.tarbank.support.AbstractIntegrationTest;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,8 +33,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -73,6 +83,18 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
     @MockitoSpyBean
     private MoneyOperationService operations;
 
+    @MockitoSpyBean
+    private FailureSimulator failures;
+
+    @Autowired
+    private FailureSimulationProperties failureProperties;
+
+    @Autowired
+    private RetentionCleanupService cleanup;
+
+    @Autowired
+    private MeterRegistry metrics;
+
     @BeforeEach
     void useFixedClock() {
         when(clock.instant()).thenReturn(Instant.parse("2026-01-15T12:00:00Z"));
@@ -80,7 +102,226 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
 
     @AfterEach
     void resetNotificationAdapter() {
-        reset(notifications, queries, operations);
+        reset(notifications, queries, operations, failures);
+    }
+
+    @Test
+    void automatedTestsKeepFailureSimulationDisabled() {
+        assertThat(failureProperties.enabled()).isFalse();
+        assertThat(failureProperties.failureRate()).isZero();
+    }
+
+    @Test
+    void forcedBeforeTransactionFailureLeavesNoDurableMoneyState() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long ownerId = createCustomer("failurebefore", "M9000001", manager);
+        String owner = login("failurebefore", "StrongPwd123");
+        String account = createAccount(ownerId, "EUR", manager);
+        String key = UUID.randomUUID().toString();
+        int transactionsBefore = transactionCount(ownerId);
+        int entriesBefore = customerEntryCount(ownerId);
+        int auditsBefore = moneyAuditCount();
+
+        doReturn(Execution.at(FailurePoint.BEFORE_TRANSACTION)).when(failures)
+                                                                    .select(TransactionType.DEPOSIT);
+        Response result = deposit(account, "15.0000", key, owner);
+
+        assertThat(result.status()).isEqualTo(500);
+        assertThat(result.body()).contains("\"code\":\"INTERNAL_ERROR\"")
+                                 .doesNotContain("BEFORE_TRANSACTION");
+        assertThat(balance(account)).isEqualByComparingTo("0.0000");
+        assertThat(transactionCount(ownerId)).isEqualTo(transactionsBefore);
+        assertThat(customerEntryCount(ownerId)).isEqualTo(entriesBefore);
+        assertThat(moneyAuditCount()).isEqualTo(auditsBefore);
+        assertThat(customerMoneyIdempotencyCount(ownerId)).isZero();
+        assertThat(jdbc.queryForObject(
+                "select count(*) from money_operation_idempotency where idempotency_key=?",
+                Integer.class, UUID.fromString(key))).isZero();
+    }
+
+    @Test
+    void forcedDuringTransactionFailureRollsBackEverythingAndCanRetry() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long ownerId = createCustomer("failureduring", "M9000002", manager);
+        String owner = login("failureduring", "StrongPwd123");
+        String account = createAccount(ownerId, "EUR", manager);
+        assertThat(deposit(account, "100.0000", UUID.randomUUID().toString(), owner).status())
+                .isEqualTo(201);
+        String key = UUID.randomUUID().toString();
+        int transactionsBefore = transactionCount(ownerId);
+        int entriesBefore = customerEntryCount(ownerId);
+        int auditsBefore = moneyAuditCount();
+        int idempotencyBefore = customerMoneyIdempotencyCount(ownerId);
+
+        doReturn(Execution.at(FailurePoint.DURING_TRANSACTION_BEFORE_COMMIT)).when(failures)
+                                                                                 .select(TransactionType.WITHDRAWAL);
+        Response result = withdraw(account, "25.0000", key, owner);
+
+        assertThat(result.status()).isEqualTo(500);
+        assertThat(balance(account)).isEqualByComparingTo("100.0000");
+        assertThat(transactionCount(ownerId)).isEqualTo(transactionsBefore);
+        assertThat(customerEntryCount(ownerId)).isEqualTo(entriesBefore);
+        assertThat(moneyAuditCount()).isEqualTo(auditsBefore);
+        assertThat(customerMoneyIdempotencyCount(ownerId)).isEqualTo(idempotencyBefore);
+        assertThat(dailyUsageRowCount(account)).isZero();
+
+        doReturn(Execution.none()).when(failures).select(TransactionType.WITHDRAWAL);
+        assertThat(withdraw(account, "25.0000", key, owner).status()).isEqualTo(201);
+        assertThat(balance(account)).isEqualByComparingTo("75.0000");
+        assertThat(usage(account, "WITHDRAWAL")).isEqualByComparingTo("25.0000");
+        assertThat(jdbc.queryForObject("""
+                                               select count(*) from money_operation_idempotency
+                                               where idempotency_key=? and status='COMPLETED'
+                                               """, Integer.class, UUID.fromString(key))).isEqualTo(1);
+    }
+
+    @Test
+    void forcedAfterCommitFailurePersistsOneReplayableCompletion() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long ownerId = createCustomer("failureafter", "M9000003", manager);
+        String owner = login("failureafter", "StrongPwd123");
+        String account = createAccount(ownerId, "EUR", manager);
+        String key = UUID.randomUUID().toString();
+
+        doReturn(Execution.at(FailurePoint.AFTER_COMMIT_BEFORE_RESPONSE)).when(failures)
+                                                                           .select(TransactionType.DEPOSIT);
+        Response first = deposit(account, "40.0000", key, owner);
+
+        assertThat(first.status()).isEqualTo(500);
+        assertThat(balance(account)).isEqualByComparingTo("40.0000");
+        assertThat(transactionCount(ownerId)).isEqualTo(1);
+        assertThat(customerEntryCount(ownerId)).isEqualTo(1);
+        assertThat(customerMoneyIdempotencyCount(ownerId)).isEqualTo(1);
+
+        Response replay = deposit(account, "40.0000", key, owner);
+
+        assertThat(replay.status()).isEqualTo(201);
+        assertThat(balance(account)).isEqualByComparingTo("40.0000");
+        assertThat(transactionCount(ownerId)).isEqualTo(1);
+        assertThat(customerEntryCount(ownerId)).isEqualTo(1);
+        assertThat(customerMoneyIdempotencyCount(ownerId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                                               select count(*) from money_operation_idempotency
+                                               where idempotency_key=? and status='COMPLETED'
+                                               """, Integer.class, UUID.fromString(key))).isEqualTo(1);
+    }
+
+    @Test
+    void cleanupDeletesOnlyExpiredMutableRetentionRecords() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long ownerId = createCustomer("cleanupowner", "M9000004", manager);
+        String owner = login("cleanupowner", "StrongPwd123");
+        String account = createAccount(ownerId, "EUR", manager);
+        UUID completedMoneyKey = UUID.randomUUID();
+        Response deposit = deposit(account, "50.0000", completedMoneyKey.toString(), owner);
+        assertThat(deposit.status()).isEqualTo(201);
+        UUID transactionId = UUID.fromString(extract(deposit.body(), "transactionId"));
+        Long accountId = jdbc.queryForObject(
+                "select id from accounts where account_number=?", Long.class, account);
+        Long managerId = jdbc.queryForObject(
+                "select id from users where username='manager'", Long.class);
+        Timestamp expired = Timestamp.from(Instant.parse("2026-01-14T12:00:00Z"));
+        Timestamp unexpired = Timestamp.from(Instant.parse("2026-01-16T12:00:00Z"));
+        UUID activeMoneyKey = UUID.randomUUID();
+        UUID expiredApiKey = UUID.randomUUID();
+        UUID activeApiKey = UUID.randomUUID();
+        UUID unexpiredApiKey = UUID.randomUUID();
+
+        jdbc.update("update money_operation_idempotency set expires_at=? where idempotency_key=?",
+                    expired, completedMoneyKey);
+        jdbc.update("""
+                            insert into money_operation_idempotency(
+                                customer_id, account_id, operation_type, idempotency_key,
+                                request_hash, status, expires_at, created_at, updated_at)
+                            values (?, ?, 'DEPOSIT', ?, ?, 'IN_PROGRESS', ?, ?, ?)
+                            """, ownerId, accountId, activeMoneyKey, "a".repeat(64),
+                    expired, expired, expired);
+        jdbc.update("""
+                            insert into api_request_idempotency(
+                                actor_user_id, operation, resource_scope, idempotency_key,
+                                request_hash, status, response_status, response_body,
+                                expires_at, created_at, updated_at)
+                            values (?, 'CLEANUP_TEST', 'expired', ?, ?, 'COMPLETED', 200,
+                                    cast(? as jsonb), ?, ?, ?)
+                            """, managerId, expiredApiKey, "b".repeat(64), "{}",
+                    expired, expired, expired);
+        jdbc.update("""
+                            insert into api_request_idempotency(
+                                actor_user_id, operation, resource_scope, idempotency_key,
+                                request_hash, status, expires_at, created_at, updated_at)
+                            values (?, 'CLEANUP_TEST', 'active', ?, ?, 'IN_PROGRESS', ?, ?, ?)
+                            """, managerId, activeApiKey, "c".repeat(64), expired, expired, expired);
+        jdbc.update("""
+                            insert into api_request_idempotency(
+                                actor_user_id, operation, resource_scope, idempotency_key,
+                                request_hash, status, response_status, response_body,
+                                expires_at, created_at, updated_at)
+                            values (?, 'CLEANUP_TEST', 'unexpired', ?, ?, 'COMPLETED', 200,
+                                    cast(? as jsonb), ?, ?, ?)
+                            """, managerId, unexpiredApiKey, "d".repeat(64), "{}",
+                    unexpired, expired, expired);
+        jdbc.update("""
+                            insert into account_limit_overrides(
+                                account_id, operation_type, limit_amount, effective_date,
+                                expires_at, updated_by_user_id, created_at, updated_at)
+                            values (?, 'WITHDRAWAL', 1500.0000, ?, ?, ?, ?, ?)
+                            """, accountId, LocalDate.parse("2026-01-14"), expired,
+                    managerId, expired, expired);
+        jdbc.update("""
+                            insert into account_limit_overrides(
+                                account_id, operation_type, limit_amount, effective_date,
+                                expires_at, updated_by_user_id, created_at, updated_at)
+                            values (?, 'TRANSFER', 1500.0000, ?, ?, ?, ?, ?)
+                            """, accountId, LocalDate.parse("2026-01-15"), unexpired,
+                    managerId, expired, expired);
+        jdbc.update("""
+                            insert into daily_limit_usage(
+                                account_id, operation_type, usage_date, used_amount, updated_at)
+                            values (?, 'WITHDRAWAL', ?, 10.0000, ?)
+                            """, accountId, LocalDate.parse("2025-01-01"), expired);
+        jdbc.update("""
+                            insert into daily_limit_usage(
+                                account_id, operation_type, usage_date, used_amount, updated_at)
+                            values (?, 'TRANSFER', ?, 10.0000, ?)
+                            """, accountId, LocalDate.parse("2026-01-15"), expired);
+        int transactionCount = jdbc.queryForObject("select count(*) from transactions", Integer.class);
+        int entryCount = jdbc.queryForObject("select count(*) from transaction_entries", Integer.class);
+        int auditCount = jdbc.queryForObject("select count(*) from audit_events", Integer.class);
+
+        RetentionCleanupService.CleanupResult result = cleanup.cleanup();
+
+        assertThat(result.lockAcquired()).isTrue();
+        assertThat(result.overrides()).isEqualTo(1);
+        assertThat(result.moneyIdempotency()).isEqualTo(1);
+        assertThat(result.apiIdempotency()).isGreaterThanOrEqualTo(1);
+        assertThat(result.dailyUsage()).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from money_operation_idempotency where idempotency_key=?",
+                Integer.class, completedMoneyKey)).isZero();
+        assertThat(jdbc.queryForObject(
+                "select count(*) from money_operation_idempotency where idempotency_key=?",
+                Integer.class, activeMoneyKey)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from api_request_idempotency where idempotency_key=?",
+                Integer.class, expiredApiKey)).isZero();
+        assertThat(jdbc.queryForObject(
+                "select count(*) from api_request_idempotency where idempotency_key in (?, ?)",
+                Integer.class, activeApiKey, unexpiredApiKey)).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from account_limit_overrides where account_id=?",
+                Integer.class, accountId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from daily_limit_usage where account_id=?",
+                Integer.class, accountId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from transactions", Integer.class))
+                .isEqualTo(transactionCount);
+        assertThat(jdbc.queryForObject("select count(*) from transaction_entries", Integer.class))
+                .isEqualTo(entryCount);
+        assertThat(jdbc.queryForObject("select count(*) from audit_events", Integer.class))
+                .isEqualTo(auditCount);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from transactions where id=?", Integer.class, transactionId))
+                .isEqualTo(1);
     }
 
     @Test
@@ -499,6 +740,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String account = createAccount(ownerId, "EUR", manager);
         doThrow(new IllegalStateException("adapter unavailable")).when(notifications)
                                                                  .send(any());
+        double failuresBefore = metrics.counter("tarbank.notifications", "outcome", "failure")
+                                       .count();
 
         Response result = deposit(account, "15.0000", UUID.randomUUID()
                                                           .toString(), owner);
@@ -531,6 +774,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "select count(*) from audit_events where target_id=?",
                 Integer.class, transactionId.toString())).isEqualTo(1);
+        assertThat(metrics.counter("tarbank.notifications", "outcome", "failure").count())
+                .isEqualTo(failuresBefore + 1.0);
     }
 
 
@@ -944,7 +1189,7 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
             return result;
         }).when(operations)
           .withdraw(eq(account), any(), eq(idempotencyKey),
-                    eq(new BigDecimal("25.0000")));
+                    eq(new BigDecimal("25.0000")), any(Execution.class));
 
         var result = mvc.perform(post("/api/v1/accounts/{account}/withdrawals", account)
                                          .header("Authorization", "Bearer " + owner)
@@ -1216,7 +1461,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                                          .contentType(MediaType.APPLICATION_JSON))
                         .andReturn();
         var response = result.getResponse();
-        if (response.getStatus() == 500 && result.getResolvedException() != null) {
+        if (response.getStatus() == 500
+                && result.getResolvedException() != null
+                && !(result.getResolvedException() instanceof SimulatedFailureException)) {
             throw new AssertionError("Unexpected money-operation failure.", result.getResolvedException());
         }
         return new Response(response.getStatus(), response.getContentAsString());

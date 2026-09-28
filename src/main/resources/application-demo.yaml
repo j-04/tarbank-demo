@@ -1,0 +1,9 @@
+spring:
+  config:
+    activate:
+      on-profile: demo
+
+tarbank:
+  failure-simulator:
+    enabled: true
+    failure-rate: 0.15

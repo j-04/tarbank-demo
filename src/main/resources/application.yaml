@@ -30,14 +30,27 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,metrics
   endpoint:
     health:
+      show-details: never
       probes:
         enabled: true
       group:
+        liveness:
+          include: livenessState
         readiness:
-          include: readinessState,db,redis
+          include: readinessState,tarbankPostgres,tarbankRedis
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.99
+  tracing:
+    enabled: true
+    sampling:
+      probability: ${TARBANK_TRACING_SAMPLING_PROBABILITY:1.0}
 
 tarbank:
   database:
@@ -60,6 +73,36 @@ tarbank:
     retention: PT24H
     lock-timeout: PT5S
     request-fingerprint-hmac-key: ${TARBANK_IDEMPOTENCY_FINGERPRINT_HMAC_KEY:}
+  failure-simulator:
+    enabled: false
+    failure-rate: 0.0
+    allowed-points:
+      - BEFORE_TRANSACTION
+      - DURING_TRANSACTION_BEFORE_COMMIT
+      - AFTER_COMMIT_BEFORE_RESPONSE
+  cleanup:
+    enabled: true
+    cron: "0 0 * * * *"
+    batch-size: 100
+    usage-retention: P90D
+    advisory-lock-id: 904202609
+  rate-limit:
+    enabled: true
+    anonymous:
+      capacity: 200
+      refill-tokens-per-second: 100.0
+    login-ip:
+      capacity: 20
+      refill-tokens-per-second: 1.0
+    login-username:
+      capacity: 5
+      refill-tokens-per-second: 0.2
+    authenticated:
+      capacity: 120
+      refill-tokens-per-second: 60.0
+    money-account:
+      capacity: 20
+      refill-tokens-per-second: 10.0
   account:
     default-limits:
       EUR:

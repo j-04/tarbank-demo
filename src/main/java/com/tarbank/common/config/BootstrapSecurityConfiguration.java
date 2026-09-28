@@ -1,6 +1,8 @@
 package com.tarbank.common.config;
 
 import com.tarbank.common.http.ApiSecurityErrorWriter;
+import com.tarbank.common.http.AuthenticatedRateLimitFilter;
+import com.tarbank.common.resilience.RateLimitService;
 import com.tarbank.security.application.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -25,7 +27,7 @@ class BootstrapSecurityConfiguration {
         return http.securityMatcher(r -> r.getLocalPort() == port)
                    .csrf(AbstractHttpConfigurer::disable)
                    .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                   .authorizeHttpRequests(a -> a.requestMatchers("/actuator/health/**")
+                   .authorizeHttpRequests(a -> a.requestMatchers("/actuator/health/**", "/actuator/metrics/**")
                                                 .permitAll()
                                                 .anyRequest()
                                                 .denyAll())
@@ -36,12 +38,15 @@ class BootstrapSecurityConfiguration {
     @Order(2)
     SecurityFilterChain application(HttpSecurity http,
                                     ApiSecurityErrorWriter errors,
-                                    JwtAuthenticationFilter jwt) throws Exception {
+                                    JwtAuthenticationFilter jwt,
+                                    RateLimitService rateLimits) throws Exception {
         return http.csrf(AbstractHttpConfigurer::disable)
                    .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                    .exceptionHandling(e -> e.authenticationEntryPoint((q, p, x) -> errors.write(p, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication is required."))
                                             .accessDeniedHandler((q, p, x) -> errors.write(p, HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.")))
                    .addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class)
+                   .addFilterAfter(new AuthenticatedRateLimitFilter(rateLimits, errors),
+                                   JwtAuthenticationFilter.class)
                    .authorizeHttpRequests(a -> a.requestMatchers(HttpMethod.POST, "/api/v1/auth/login")
                                                 .permitAll()
                                                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**")

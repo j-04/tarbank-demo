@@ -6,7 +6,10 @@ import com.tarbank.common.config.IdempotencyProperties;
 import com.tarbank.common.domain.AuditEventEntity;
 import com.tarbank.common.http.ApiException;
 import com.tarbank.common.http.CorrelationIdContext;
+import com.tarbank.common.observability.OperationalMetrics;
 import com.tarbank.common.persistence.AuditEventRepository;
+import com.tarbank.common.resilience.FailurePoint;
+import com.tarbank.common.resilience.FailureSimulator.Execution;
 import com.tarbank.money.api.MoneyOperationController.AccountOperationResponse;
 import com.tarbank.money.api.MoneyOperationController.TransferResponse;
 import com.tarbank.money.domain.DailyLimitUsageEntity;
@@ -25,6 +28,7 @@ import com.tarbank.money.persistence.MoneyTransactionRepository;
 import com.tarbank.money.persistence.TransactionEntryRepository;
 import com.tarbank.security.application.TarbankPrincipal;
 import com.tarbank.security.domain.Role;
+import org.apache.logging.log4j.CloseableThreadContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -75,6 +79,8 @@ public class MoneyOperationService {
 
     private final NotificationService notifications;
 
+    private final OperationalMetrics metrics;
+
     public MoneyOperationService(MoneyQueryRepository queries,
                                  MoneyTransactionRepository transactions,
                                  TransactionEntryRepository entries,
@@ -84,7 +90,8 @@ public class MoneyOperationService {
                                  JsonMapper json,
                                  IdempotencyProperties idempotencyProperties,
                                  EffectiveLimitService limits,
-                                 NotificationService notifications) {
+                                 NotificationService notifications,
+                                 OperationalMetrics metrics) {
         this.queries = queries;
         this.transactions = transactions;
         this.entries = entries;
@@ -95,6 +102,7 @@ public class MoneyOperationService {
         this.idempotencyProperties = idempotencyProperties;
         this.limits = limits;
         this.notifications = notifications;
+        this.metrics = metrics;
     }
 
     public static ApiException validation() {
@@ -107,12 +115,21 @@ public class MoneyOperationService {
                                                     TarbankPrincipal principal,
                                                     UUID key,
                                                     BigDecimal requestedAmount) {
+        return deposit(accountNumber, principal, key, requestedAmount, Execution.none());
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Result<AccountOperationResponse> deposit(String accountNumber,
+                                                    TarbankPrincipal principal,
+                                                    UUID key,
+                                                    BigDecimal requestedAmount,
+                                                    Execution failure) {
         try {
-            AccountScope owner = requireOwnedAccount(accountNumber, principal);
+            AccountScope owner = authorizeSourceAccount(accountNumber, principal);
             BigDecimal amount = normalize(requestedAmount);
             return execute(owner, TransactionType.DEPOSIT, key,
                            hash(TransactionType.DEPOSIT, accountNumber, null, amount),
-                           AccountOperationResponse.class,
+                           AccountOperationResponse.class, failure,
                            () -> depositFirst(owner, amount));
         } catch (PessimisticLockingFailureException exception) {
             throw requestInProgress();
@@ -124,12 +141,21 @@ public class MoneyOperationService {
                                                      TarbankPrincipal principal,
                                                      UUID key,
                                                      BigDecimal requestedAmount) {
+        return withdraw(accountNumber, principal, key, requestedAmount, Execution.none());
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Result<AccountOperationResponse> withdraw(String accountNumber,
+                                                     TarbankPrincipal principal,
+                                                     UUID key,
+                                                     BigDecimal requestedAmount,
+                                                     Execution failure) {
         try {
-            AccountScope owner = requireOwnedAccount(accountNumber, principal);
+            AccountScope owner = authorizeSourceAccount(accountNumber, principal);
             BigDecimal amount = normalize(requestedAmount);
             return execute(owner, TransactionType.WITHDRAWAL, key,
                            hash(TransactionType.WITHDRAWAL, accountNumber, null, amount),
-                           AccountOperationResponse.class,
+                           AccountOperationResponse.class, failure,
                            () -> withdrawFirst(owner, amount));
         } catch (PessimisticLockingFailureException exception) {
             throw requestInProgress();
@@ -142,16 +168,27 @@ public class MoneyOperationService {
                                              UUID key,
                                              String destinationAccountNumber,
                                              BigDecimal requestedAmount) {
+        return transfer(sourceAccountNumber, principal, key, destinationAccountNumber,
+                        requestedAmount, Execution.none());
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Result<TransferResponse> transfer(String sourceAccountNumber,
+                                             TarbankPrincipal principal,
+                                             UUID key,
+                                             String destinationAccountNumber,
+                                             BigDecimal requestedAmount,
+                                             Execution failure) {
         if (sourceAccountNumber.equals(destinationAccountNumber)) {
             throw validation();
         }
         try {
-            AccountScope owner = requireOwnedAccount(sourceAccountNumber, principal);
+            AccountScope owner = authorizeSourceAccount(sourceAccountNumber, principal);
             BigDecimal amount = normalize(requestedAmount);
             return execute(owner, TransactionType.TRANSFER, key,
                            hash(TransactionType.TRANSFER, sourceAccountNumber,
                                 destinationAccountNumber, amount),
-                           TransferResponse.class,
+                           TransferResponse.class, failure,
                            () -> transferFirst(owner, destinationAccountNumber, amount));
         } catch (PessimisticLockingFailureException exception) {
             throw requestInProgress();
@@ -163,6 +200,7 @@ public class MoneyOperationService {
                                   UUID key,
                                   String requestHash,
                                   Class<T> responseType,
+                                  Execution failure,
                                   Supplier<Attempt<T>> operation) {
         setLockTimeout();
         Instant now = limits.now();
@@ -198,7 +236,8 @@ public class MoneyOperationService {
                           attempt.failure() == null ? TransactionStatus.COMPLETED : TransactionStatus.FAILED,
                           attempt.failure() == null ? null : attempt.failure()
                                                                     .code());
-        return new Result<>(httpStatus, attempt.body(), attempt.failure());
+        failure.inject(FailurePoint.DURING_TRANSACTION_BEFORE_COMMIT);
+        return new Result<>(httpStatus, attempt.body(), attempt.failure(), false);
     }
 
     private <T> Result<T> replay(MoneyOperationIdempotencyEntity record,
@@ -209,10 +248,10 @@ public class MoneyOperationService {
         try {
             if (record.getStatus() == MoneyIdempotencyStatus.FAILED) {
                 return new Result<>(record.getResponseStatus(), null,
-                                    json.readValue(record.getResponseBody(), Failure.class));
+                                    json.readValue(record.getResponseBody(), Failure.class), true);
             }
             return new Result<>(record.getResponseStatus(),
-                                json.readValue(record.getResponseBody(), responseType), null);
+                                json.readValue(record.getResponseBody(), responseType), null, true);
         } catch (Exception exception) {
             throw new IllegalStateException("Stored money response is unreadable.", exception);
         }
@@ -399,8 +438,9 @@ public class MoneyOperationService {
         return new Attempt<>(transaction, body, null);
     }
 
-    private AccountScope requireOwnedAccount(String accountNumber,
-                                             TarbankPrincipal principal) {
+    @Transactional(readOnly = true)
+    public AccountScope authorizeSourceAccount(String accountNumber,
+                                               TarbankPrincipal principal) {
         if (principal == null || principal.role() != Role.CUSTOMER) {
             throw accessDenied();
         }
@@ -503,9 +543,16 @@ public class MoneyOperationService {
                 try {
                     notifications.send(new NotificationService.Outcome(
                             transactionId, type, status, failureCode));
+                    metrics.notification("success");
                 } catch (Exception exception) {
-                    LOGGER.warn("Notification adapter failed after money operation commit: transactionId={} type={} status={}",
-                                transactionId, type, status, exception);
+                    metrics.notification("failure");
+                    try (CloseableThreadContext.Instance ignored = CloseableThreadContext.putAll(Map.of(
+                            "operationType", type.name(),
+                            "outcome", "notification_failure"))) {
+                        LOGGER.warn(
+                                "Notification adapter failed after commit status={} exceptionType={}",
+                                status, exception.getClass().getName());
+                    }
                 }
             }
         });
@@ -588,7 +635,7 @@ public class MoneyOperationService {
                                 "TAR-IDEMPOTENCY-002");
     }
 
-    public record Result<T>(int httpStatus, T body, Failure failure) {
+    public record Result<T>(int httpStatus, T body, Failure failure, boolean replayed) {
     }
 
     public record Failure(int httpStatus, String code, String message, String internalCode) {
