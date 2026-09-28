@@ -1,10 +1,14 @@
 package com.tarbank.money;
 
+import com.tarbank.money.application.MoneyOperationService;
 import com.tarbank.money.application.NotificationService;
 import com.tarbank.money.persistence.MoneyQueryRepository;
 import com.tarbank.support.AbstractIntegrationTest;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -12,29 +16,42 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 @ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
+@Timeout(value = 45, unit = TimeUnit.SECONDS)
 class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private MockMvc mvc;
@@ -42,15 +59,32 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    @Autowired
+    private EntityManager entityManager;
+
+    @Autowired
+    private JsonMapper json;
+
+    @MockitoBean
+    private Clock clock;
+
     @MockitoSpyBean
     private NotificationService notifications;
 
     @MockitoSpyBean
     private MoneyQueryRepository queries;
 
+    @MockitoSpyBean
+    private MoneyOperationService operations;
+
+    @BeforeEach
+    void useFixedClock() {
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-15T12:00:00Z"));
+    }
+
     @AfterEach
     void resetNotificationAdapter() {
-        reset(notifications, queries);
+        reset(notifications, queries, operations);
     }
 
     @Test
@@ -222,6 +256,7 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThat(deposit(source, "10.0000", "not-a-uuid", owner).status()).isEqualTo(400);
         assertThat(deposit(source, "10.0000", UUID.randomUUID().toString(), otherOwner).status()).isEqualTo(403);
         assertThat(deposit(source, "10.0000", UUID.randomUUID().toString(), manager).status()).isEqualTo(403);
+        assertThat(deposit(source, "10.0000", UUID.randomUUID().toString(), null).status()).isEqualTo(401);
         assertThat(depositWithoutKey(source, "10.0000", owner).status()).isEqualTo(400);
         assertThat(transactionCount(ownerId)).isEqualTo(transactionCount);
         assertThat(otherId).isPositive();
@@ -361,6 +396,12 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         }
 
         assertThat(List.of(delayed.status(), competing.status())).containsOnly(201);
+        UUID competingId = UUID.fromString(extract(competing.body(), "transactionId"));
+        UUID delayedId = UUID.fromString(extract(delayed.body(), "transactionId"));
+        assertAccountEntry(competingId, secondSource, "-40.0000", "60.0000");
+        assertAccountEntry(competingId, destination, "40.0000", "40.0000");
+        assertAccountEntry(delayedId, firstSource, "-60.0000", "40.0000");
+        assertAccountEntry(delayedId, destination, "60.0000", "100.0000");
         assertReconciled(firstSource, "40.0000");
         assertReconciled(secondSource, "60.0000");
         assertReconciled(destination, "100.0000");
@@ -438,12 +479,508 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> jdbc.update(
                 "update audit_events set action='CHANGED' where target_id=?", transactionId.toString()))
                 .isInstanceOf(DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+                "update transaction_entries set balance_after=16.0000 where transaction_id=?", transactionId))
+                .isInstanceOf(DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+                "delete from audit_events where target_id=?", transactionId.toString()))
+                .isInstanceOf(DataAccessException.class);
+        assertThatThrownBy(() -> jdbc.update(
+                "delete from transactions where id=?", transactionId))
+                .isInstanceOf(DataAccessException.class);
         assertThat(jdbc.queryForObject(
                 "select count(*) from transaction_entries where transaction_id=?",
                 Integer.class, transactionId)).isEqualTo(1);
         assertThat(jdbc.queryForObject(
                 "select count(*) from audit_events where target_id=?",
                 Integer.class, transactionId.toString())).isEqualTo(1);
+    }
+
+
+    @Test
+    void oppositeDirectionTransfersCompleteWithoutDeadlock() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long firstOwnerId = createCustomer("phase7oppositeone", "M7000001", manager);
+        Long secondOwnerId = createCustomer("phase7oppositetwo", "M7000002", manager);
+        String firstOwner = login("phase7oppositeone", "StrongPwd123");
+        String secondOwner = login("phase7oppositetwo", "StrongPwd123");
+        String firstAccount = createAccount(firstOwnerId, "EUR", manager);
+        String secondAccount = createAccount(secondOwnerId, "EUR", manager);
+        assertThat(deposit(firstAccount, "200.0000", UUID.randomUUID().toString(), firstOwner).status())
+                .isEqualTo(201);
+        assertThat(deposit(secondAccount, "200.0000", UUID.randomUUID().toString(), secondOwner).status())
+                .isEqualTo(201);
+
+        CyclicBarrier beforeLocks = new CyclicBarrier(2);
+        doAnswer(invocation -> {
+            beforeLocks.await(10, TimeUnit.SECONDS);
+            return invocation.callRealMethod();
+        }).when(queries).lockAccounts(anyLong(), anyLong());
+
+        List<Response> responses = concurrently(
+                () -> transfer(firstAccount, secondAccount, "50.0000",
+                               UUID.randomUUID().toString(), firstOwner),
+                () -> transfer(secondAccount, firstAccount, "50.0000",
+                               UUID.randomUUID().toString(), secondOwner));
+
+        assertThat(responses).allSatisfy(response -> assertThat(response.status()).isEqualTo(201));
+        for (Response response : responses) {
+            UUID transactionId = UUID.fromString(extract(response.body(), "transactionId"));
+            assertThat(jdbc.queryForObject(
+                    "select count(*) from transaction_entries where transaction_id=?",
+                    Integer.class, transactionId)).isEqualTo(2);
+            assertThat(jdbc.queryForObject(
+                    "select sum(amount_delta) from transaction_entries where transaction_id=?",
+                    BigDecimal.class, transactionId)).isEqualByComparingTo("0.0000");
+        }
+        assertReconciled(firstAccount, "200.0000");
+        assertReconciled(secondAccount, "200.0000");
+        assertThat(jdbc.queryForObject(
+                "select count(*) from accounts where balance < 0", Integer.class)).isZero();
+        assertAllAccountsReconciled();
+    }
+
+    @Test
+    void moneyOperationAndStatusChangeHaveOneSerialOrder() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long ownerId = createCustomer("phase7statusrace", "M7000003", manager);
+        String owner = login("phase7statusrace", "StrongPwd123");
+        String account = createAccount(ownerId, "EUR", manager);
+        assertThat(deposit(account, "40.0000", UUID.randomUUID().toString(), owner).status())
+                .isEqualTo(201);
+
+        Long accountId = jdbc.queryForObject(
+                "select id from accounts where account_number=?", Long.class, account);
+        CountDownLatch moneyLocked = new CountDownLatch(1);
+        CountDownLatch resumeMoney = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            moneyLocked.countDown();
+            if (!resumeMoney.await(10, TimeUnit.SECONDS)) {
+                throw new AssertionError("Timed out while holding the account lock.");
+            }
+            return result;
+        }).when(queries).lockAccount(accountId);
+
+        Response moneyResult;
+        Response statusResult;
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var moneyFuture = executor.submit(
+                    () -> deposit(account, "10.0000", UUID.randomUUID().toString(), owner));
+            assertThat(moneyLocked.await(10, TimeUnit.SECONDS)).isTrue();
+            var statusFuture = executor.submit(() -> patchAccountStatusResponse(account, manager));
+            awaitDatabaseLockWaiter();
+            resumeMoney.countDown();
+            moneyResult = moneyFuture.get(15, TimeUnit.SECONDS);
+            statusResult = statusFuture.get(15, TimeUnit.SECONDS);
+        } finally {
+            resumeMoney.countDown();
+        }
+
+        assertThat(moneyResult.status()).isEqualTo(201);
+        assertThat(statusResult.status()).isEqualTo(200);
+        assertThat(jdbc.queryForObject(
+                "select status from accounts where account_number=?", String.class, account))
+                .isEqualTo("BLOCKED");
+        assertFailure(deposit(account, "5.0000", UUID.randomUUID().toString(), owner),
+                      "ACCOUNT_NOT_ACTIVE");
+        assertReconciled(account, "50.0000");
+    }
+
+    @Test
+    void dailyUsageIsAtomicSeparatedAndBoundToTheCustomerLocalDate() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long ownerId = createCustomer("phase7usagerace", "M7000004", manager);
+        String owner = login("phase7usagerace", "StrongPwd123");
+        String account = createAccount(ownerId, "EUR", manager);
+        assertThat(deposit(account, "2000.0000", UUID.randomUUID().toString(), owner).status())
+                .isEqualTo(201);
+        assertThat(dailyUsageRowCount(account)).isZero();
+
+        Long accountId = jdbc.queryForObject(
+                "select id from accounts where account_number=?", Long.class, account);
+        CyclicBarrier beforeLock = new CyclicBarrier(2);
+        doAnswer(invocation -> {
+            beforeLock.await(10, TimeUnit.SECONDS);
+            return invocation.callRealMethod();
+        }).when(queries).lockAccount(accountId);
+
+        List<Response> responses = concurrently(
+                () -> withdraw(account, "600.0000", UUID.randomUUID().toString(), owner),
+                () -> withdraw(account, "600.0000", UUID.randomUUID().toString(), owner));
+
+        assertThat(responses.stream().map(Response::status).toList())
+                .containsExactlyInAnyOrder(201, 422);
+        assertThat(responses.stream()
+                            .filter(response -> response.status() == 422)
+                            .findFirst()
+                            .orElseThrow()
+                            .body()).contains("\"code\":\"DAILY_LIMIT_EXCEEDED\"");
+        assertThat(dailyUsageRowCount(account)).isEqualTo(1);
+        assertThat(usage(account, "WITHDRAWAL")).isEqualByComparingTo("600.0000");
+        assertReconciled(account, "1400.0000");
+        assertThat(jdbc.queryForObject(
+                "select count(*) from daily_limit_usage where used_amount > 1000.0000",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                select count(*) from (
+                    select account_id, operation_type, usage_date
+                    from daily_limit_usage
+                    group by account_id, operation_type, usage_date
+                    having count(*) > 1
+                ) duplicate_usage
+                """, Integer.class)).isZero();
+        reset(queries);
+
+        String separateAccount = createAccount(ownerId, "EUR", manager);
+        String destination = createAccount(ownerId, "EUR", manager);
+        assertThat(deposit(separateAccount, "2000.0000",
+                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(dailyUsageRowCount(separateAccount)).isZero();
+        assertThat(withdraw(separateAccount, "600.0000",
+                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(transfer(separateAccount, destination, "600.0000",
+                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(dailyUsageRowCount(separateAccount)).isEqualTo(2);
+        assertThat(usage(separateAccount, "WITHDRAWAL")).isEqualByComparingTo("600.0000");
+        assertThat(usage(separateAccount, "TRANSFER")).isEqualByComparingTo("600.0000");
+        assertThat(dailyUsageRowCount(destination)).isZero();
+        assertThat(deposit(separateAccount, "10.0000",
+                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(usage(separateAccount, "WITHDRAWAL")).isEqualByComparingTo("600.0000");
+        assertThat(usage(separateAccount, "TRANSFER")).isEqualByComparingTo("600.0000");
+
+        String transferSource = createAccount(ownerId, "EUR", manager);
+        String firstTransferDestination = createAccount(ownerId, "EUR", manager);
+        String secondTransferDestination = createAccount(ownerId, "EUR", manager);
+        assertThat(deposit(transferSource, "2000.0000",
+                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        String firstTransferKey = UUID.randomUUID().toString();
+        String secondTransferKey = UUID.randomUUID().toString();
+        CyclicBarrier beforeTransferLocks = new CyclicBarrier(2);
+        doAnswer(invocation -> {
+            beforeTransferLocks.await(10, TimeUnit.SECONDS);
+            return invocation.callRealMethod();
+        }).when(queries).lockAccounts(anyLong(), anyLong());
+
+        List<Response> transferResponses = concurrently(
+                () -> transfer(transferSource, firstTransferDestination, "600.0000",
+                               firstTransferKey, owner),
+                () -> transfer(transferSource, secondTransferDestination, "600.0000",
+                               secondTransferKey, owner));
+
+        assertThat(transferResponses.stream().map(Response::status).toList())
+                .containsExactlyInAnyOrder(201, 422);
+        assertThat(transferResponses.stream()
+                                    .filter(response -> response.status() == 422)
+                                    .findFirst()
+                                    .orElseThrow()
+                                    .body()).contains("\"code\":\"DAILY_LIMIT_EXCEEDED\"");
+        assertThat(dailyUsageRowCount(transferSource)).isEqualTo(1);
+        assertThat(usage(transferSource, "TRANSFER")).isEqualByComparingTo("600.0000");
+        assertThat(jdbc.queryForObject("""
+                select count(*) from transaction_entries e
+                join money_operation_idempotency i on i.transaction_id=e.transaction_id
+                where i.idempotency_key in (?, ?)
+                """, Integer.class, UUID.fromString(firstTransferKey),
+                                      UUID.fromString(secondTransferKey))).isEqualTo(2);
+        assertThat(jdbc.queryForObject("""
+                select count(*) from transactions t
+                join money_operation_idempotency i on i.transaction_id=t.id
+                where i.idempotency_key in (?, ?) and t.status='FAILED'
+                  and t.failure_code='DAILY_LIMIT_EXCEEDED'
+                """, Integer.class, UUID.fromString(firstTransferKey),
+                                      UUID.fromString(secondTransferKey))).isEqualTo(1);
+        assertReconciled(transferSource, "1400.0000");
+        assertThat(balance(firstTransferDestination).add(balance(secondTransferDestination)))
+                .isEqualByComparingTo("600.0000");
+        assertAllAccountsReconciled();
+        reset(queries);
+
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-01T22:59:59Z"));
+        String midnightAccount = createAccount(ownerId, "EUR", manager);
+        String midnightTransferSource = createAccount(ownerId, "EUR", manager);
+        String midnightTransferDestination = createAccount(ownerId, "EUR", manager);
+        assertThat(deposit(midnightAccount, "1500.0000",
+                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(deposit(midnightTransferSource, "1500.0000",
+                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(withdraw(midnightAccount, "600.0000",
+                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(transfer(midnightTransferSource, midnightTransferDestination, "600.0000",
+                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        when(clock.instant()).thenReturn(Instant.parse("2026-01-01T23:00:01Z"));
+        assertThat(withdraw(midnightAccount, "600.0000",
+                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(transfer(midnightTransferSource, midnightTransferDestination, "600.0000",
+                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(jdbc.query("""
+                select usage_date::text || ':' || used_amount::text
+                from daily_limit_usage u
+                join accounts a on a.id=u.account_id
+                where a.account_number=? and u.operation_type='WITHDRAWAL'
+                order by usage_date
+                """, (resultSet, rowNumber) -> resultSet.getString(1), midnightAccount))
+                .containsExactly("2026-01-01:600.0000", "2026-01-02:600.0000");
+        assertReconciled(midnightAccount, "300.0000");
+        assertThat(jdbc.query("""
+                select usage_date::text || ':' || used_amount::text
+                from daily_limit_usage u
+                join accounts a on a.id=u.account_id
+                where a.account_number=? and u.operation_type='TRANSFER'
+                order by usage_date
+                """, (resultSet, rowNumber) -> resultSet.getString(1), midnightTransferSource))
+                .containsExactly("2026-01-01:600.0000", "2026-01-02:600.0000");
+        assertReconciled(midnightTransferSource, "300.0000");
+        assertReconciled(midnightTransferDestination, "1200.0000");
+        assertAllAccountsReconciled();
+    }
+
+    @Test
+    void matchingIdempotencyRaceHasOneDurableOutcomeAndRetriesReplayIt() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long ownerId = createCustomer("phase7idempotency", "M7000005", manager);
+        String owner = login("phase7idempotency", "StrongPwd123");
+        String account = createAccount(ownerId, "EUR", manager);
+        String key = UUID.randomUUID().toString();
+
+        CyclicBarrier beforeReservation = new CyclicBarrier(2);
+        doAnswer(invocation -> {
+            beforeReservation.await(10, TimeUnit.SECONDS);
+            return invocation.callRealMethod();
+        }).when(queries).findAccountScope(account);
+
+        List<Response> responses = concurrently(
+                () -> deposit(account, "25.0000", key, owner),
+                () -> deposit(account, "25.0000", key, owner));
+
+        assertThat(responses).allSatisfy(response -> {
+            assertThat(response.status()).isIn(201, 409);
+            if (response.status() == 409) {
+                assertThat(response.body()).contains("\"code\":\"REQUEST_IN_PROGRESS\"");
+            }
+        });
+        List<Response> completed = responses.stream()
+                                            .filter(response -> response.status() == 201)
+                                            .toList();
+        assertThat(completed).isNotEmpty();
+        assertThat(completed.stream()
+                            .map(response -> extract(response.body(), "transactionId"))
+                            .distinct()).hasSize(1);
+        Response original = completed.getFirst();
+        UUID transactionId = UUID.fromString(extract(original.body(), "transactionId"));
+        assertThat(jdbc.queryForObject(
+                "select count(*) from money_operation_idempotency where idempotency_key=?",
+                Integer.class, UUID.fromString(key))).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from transactions where id=?",
+                Integer.class, transactionId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from transaction_entries where transaction_id=?",
+                Integer.class, transactionId)).isEqualTo(1);
+        assertThat(balance(account)).isEqualByComparingTo("25.0000");
+        reset(queries);
+
+        assertThat(deposit(account, "5.0000", UUID.randomUUID().toString(), owner).status())
+                .isEqualTo(201);
+        assertThat(patchAccountStatusResponse(account, manager).status()).isEqualTo(200);
+        assertThat(jdbc.queryForObject(
+                "select management_version from accounts where account_number=?",
+                Integer.class, account)).isEqualTo(1);
+        int transactionsBeforeReplay = transactionCount(ownerId);
+        int entriesBeforeReplay = customerEntryCount(ownerId);
+        int auditsBeforeReplay = moneyAuditCount();
+        int usageBeforeReplay = dailyUsageRowCount(account);
+
+        Response replay = deposit(account, "25", key, owner);
+        var originalEnvelope = json.readTree(original.body());
+        var replayEnvelope = json.readTree(replay.body());
+        assertThat(replay.status()).isEqualTo(original.status());
+        assertThat(replayEnvelope.path("data")).isEqualTo(originalEnvelope.path("data"));
+        assertThat(replayEnvelope.path("data").path("balanceAfter").asString())
+                .isEqualTo("25.0000");
+        assertThat(replayEnvelope.path("data").path("completedAt"))
+                .isEqualTo(originalEnvelope.path("data").path("completedAt"));
+        assertThat(replayEnvelope.path("correlationId").asString())
+                .isNotEqualTo(originalEnvelope.path("correlationId").asString());
+        assertThat(transactionCount(ownerId)).isEqualTo(transactionsBeforeReplay);
+        assertThat(customerEntryCount(ownerId)).isEqualTo(entriesBeforeReplay);
+        assertThat(moneyAuditCount()).isEqualTo(auditsBeforeReplay);
+        assertThat(dailyUsageRowCount(account)).isEqualTo(usageBeforeReplay);
+        assertThat(balance(account)).isEqualByComparingTo("30.0000");
+
+        Response conflict = deposit(account, "26.0000", key, owner);
+        assertThat(conflict.status()).isEqualTo(409);
+        assertThat(conflict.body()).contains("\"code\":\"IDEMPOTENCY_CONFLICT\"");
+        assertThat(patchAccountStatusResponse(account, "ACTIVE", "account-v1", manager).status())
+                .isEqualTo(200);
+        assertThat(balance(account)).isEqualByComparingTo("30.0000");
+
+        String failedKey = UUID.randomUUID().toString();
+        assertFailure(withdraw(account, "40.0000", failedKey, owner), "INSUFFICIENT_FUNDS");
+        assertFailure(withdraw(account, "40", failedKey, owner), "INSUFFICIENT_FUNDS");
+        assertThat(jdbc.queryForObject("""
+                select count(*) from transactions t
+                join money_operation_idempotency i on i.transaction_id=t.id
+                where i.idempotency_key=? and t.status='FAILED'
+                """, Integer.class, UUID.fromString(failedKey))).isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                select count(*) from transaction_entries e
+                join money_operation_idempotency i on i.transaction_id=e.transaction_id
+                where i.idempotency_key=?
+                """, Integer.class, UUID.fromString(failedKey))).isZero();
+        assertAllAccountsReconciled();
+    }
+
+    @Test
+    void preCommitExceptionRollsBackEverythingAndTheSameKeyCanRetry() throws Exception {
+        String manager = login("manager", "TestPass123!");
+        Long ownerId = createCustomer("phase7rollback", "M7000006", manager);
+        String owner = login("phase7rollback", "StrongPwd123");
+        String account = createAccount(ownerId, "EUR", manager);
+        assertThat(deposit(account, "100.0000", UUID.randomUUID().toString(), owner).status())
+                .isEqualTo(201);
+        String key = UUID.randomUUID().toString();
+
+        int transactionsBefore = transactionCount(ownerId);
+        int entriesBefore = customerEntryCount(ownerId);
+        int auditsBefore = moneyAuditCount();
+        int idempotencyBefore = customerMoneyIdempotencyCount(ownerId);
+        int usageBefore = dailyUsageRowCount(account);
+        AtomicBoolean writesFlushed = new AtomicBoolean();
+        AtomicBoolean hookReached = new AtomicBoolean();
+        UUID idempotencyKey = UUID.fromString(key);
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            entityManager.flush();
+            writesFlushed.set(true);
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void beforeCommit(boolean readOnly) {
+                    hookReached.set(true);
+                    throw new TestRollbackException();
+                }
+            });
+            return result;
+        }).when(operations).withdraw(eq(account), any(), eq(idempotencyKey),
+                                    eq(new BigDecimal("25.0000")));
+
+        var result = mvc.perform(post("/api/v1/accounts/{account}/withdrawals", account)
+                                         .header("Authorization", "Bearer " + owner)
+                                         .header("Idempotency-Key", key)
+                                         .contentType(MediaType.APPLICATION_JSON)
+                                         .content("{\"amount\":\"25.0000\"}"))
+                        .andReturn();
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(500);
+        assertThat(result.getResolvedException()).isInstanceOf(TestRollbackException.class);
+        assertThat(writesFlushed.get()).isTrue();
+        assertThat(hookReached.get()).isTrue();
+        assertThat(balance(account)).isEqualByComparingTo("100.0000");
+        assertThat(transactionCount(ownerId)).isEqualTo(transactionsBefore);
+        assertThat(customerEntryCount(ownerId)).isEqualTo(entriesBefore);
+        assertThat(moneyAuditCount()).isEqualTo(auditsBefore);
+        assertThat(customerMoneyIdempotencyCount(ownerId)).isEqualTo(idempotencyBefore);
+        assertThat(dailyUsageRowCount(account)).isEqualTo(usageBefore);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from money_operation_idempotency where idempotency_key=?",
+                Integer.class, idempotencyKey)).isZero();
+        assertAllAccountsReconciled();
+        reset(operations);
+
+        assertThat(withdraw(account, "25.0000", key, owner).status()).isEqualTo(201);
+        assertThat(usage(account, "WITHDRAWAL")).isEqualByComparingTo("25.0000");
+        assertReconciled(account, "75.0000");
+        assertThat(jdbc.queryForObject("""
+                select count(*) from money_operation_idempotency
+                where idempotency_key=? and status='COMPLETED'
+                """, Integer.class, UUID.fromString(key))).isEqualTo(1);
+    }
+
+    private List<Response> concurrently(Callable<Response> first,
+                                        Callable<Response> second) throws Exception {
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var firstResult = executor.submit(first);
+            var secondResult = executor.submit(second);
+            return List.of(firstResult.get(15, TimeUnit.SECONDS),
+                           secondResult.get(15, TimeUnit.SECONDS));
+        }
+    }
+
+    private void awaitDatabaseLockWaiter() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Integer waiters = jdbc.queryForObject("""
+                    select count(*) from pg_stat_activity
+                    where datname=current_database() and wait_event_type='Lock'
+                    """, Integer.class);
+            if (waiters != null && waiters > 0) return;
+            Thread.sleep(25);
+        }
+        throw new AssertionError("Timed out waiting for the competing database lock.");
+    }
+
+    private Response patchAccountStatusResponse(String account,
+                                                String manager) throws Exception {
+        return patchAccountStatusResponse(account, "BLOCKED", "account-v0", manager);
+    }
+
+    private Response patchAccountStatusResponse(String account,
+                                                String status,
+                                                String etag,
+                                                String manager) throws Exception {
+        var response = mvc.perform(patch("/api/v1/accounts/{account}/status", account)
+                                           .header("Authorization", "Bearer " + manager)
+                                           .header("If-Match", etag)
+                                           .contentType(MediaType.APPLICATION_JSON)
+                                           .content("{\"status\":\"" + status + "\"}"))
+                          .andReturn()
+                          .getResponse();
+        return new Response(response.getStatus(), response.getContentAsString());
+    }
+
+    private int dailyUsageRowCount(String account) {
+        return jdbc.queryForObject("""
+                select count(*) from daily_limit_usage u
+                join accounts a on a.id=u.account_id
+                where a.account_number=?
+                """, Integer.class, account);
+    }
+
+    private int customerEntryCount(Long customerId) {
+        return jdbc.queryForObject("""
+                select count(*) from transaction_entries e
+                join transactions t on t.id=e.transaction_id
+                where t.initiated_by_customer_id=?
+                """, Integer.class, customerId);
+    }
+
+    private int moneyAuditCount() {
+        return jdbc.queryForObject("""
+                select count(*) from audit_events
+                where target_type='TRANSACTION' and action like 'MONEY_OPERATION_%'
+                """, Integer.class);
+    }
+
+    private int customerMoneyIdempotencyCount(Long customerId) {
+        return jdbc.queryForObject(
+                "select count(*) from money_operation_idempotency where customer_id=?",
+                Integer.class, customerId);
+    }
+
+    private void assertAllAccountsReconciled() {
+        assertThat(jdbc.queryForObject("""
+                select count(*) from (
+                    select a.id
+                    from accounts a
+                    left join transaction_entries e on e.account_id=a.id
+                    group by a.id, a.balance
+                    having a.balance <> coalesce(sum(e.amount_delta), 0)
+                ) unreconciled
+                """, Integer.class)).isZero();
+    }
+
+    private static final class TestRollbackException extends RuntimeException {
     }
 
     private void pauseAfterIdempotency(String key,
@@ -516,6 +1053,19 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    private void assertAccountEntry(UUID transactionId,
+                                    String accountNumber,
+                                    String expectedDelta,
+                                    String expectedBalanceAfter) {
+        var row = jdbc.queryForMap("""
+                select e.amount_delta, e.balance_after
+                from transaction_entries e
+                join accounts a on a.id=e.account_id
+                where e.transaction_id=? and a.account_number=?
+                """, transactionId, accountNumber);
+        assertThat((BigDecimal) row.get("amount_delta")).isEqualByComparingTo(expectedDelta);
+        assertThat((BigDecimal) row.get("balance_after")).isEqualByComparingTo(expectedBalanceAfter);
+    }
     private BigDecimal balance(String accountNumber) {
         return jdbc.queryForObject("select balance from accounts where account_number=?",
                                    BigDecimal.class, accountNumber);
