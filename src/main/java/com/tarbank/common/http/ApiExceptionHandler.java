@@ -43,7 +43,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiErrorResponse> known(ApiException exception) {
         LOGGER.warn("internalCode={} publicErrorCode={} httpStatus={} correlationId={}",
-                exception.getInternalCode(), exception.getCode(), exception.getStatus().value(), correlationId());
+                    exception.getInternalCode(), exception.getCode(), exception.getStatus().value(), correlationId());
         return ResponseEntity.status(exception.getStatus())
                 .body(ApiErrorResponses.error(correlationId(), exception.getCode(), exception.getSafeMessage()));
     }
@@ -64,7 +64,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> unexpected(Exception exception) {
         LOGGER.error("internalCode=TAR-INFRA-001 publicErrorCode=INTERNAL_ERROR httpStatus=500 exceptionType={} correlationId={}",
-                exception.getClass().getName(), correlationId());
+                     exception.getClass().getName(), correlationId());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiErrorResponses.internalError(correlationId()));
     }
