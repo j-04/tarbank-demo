@@ -1,14 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<databaseChangeLog xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
     <changeSet id="V004-money-operation-core" author="tarbank">
         <createTable tableName="transactions">
-            <column name="id" type="UUID"><constraints primaryKey="true" nullable="false"/></column>
-            <column name="type" type="VARCHAR(20)"><constraints nullable="false"/></column>
-            <column name="status" type="VARCHAR(20)"><constraints nullable="false"/></column>
-            <column name="amount" type="NUMERIC(19,4)"><constraints nullable="false"/></column>
-            <column name="currency" type="CHAR(3)"><constraints nullable="false"/></column>
+            <column name="id" type="UUID">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="type" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="amount" type="NUMERIC(19,4)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="currency" type="CHAR(3)">
+                <constraints nullable="false"/>
+            </column>
             <column name="initiated_by_customer_id" type="BIGINT">
                 <constraints nullable="false" foreignKeyName="fk_transactions_customer"
                              referencedTableName="customers" referencedColumnNames="user_id"/>
@@ -22,31 +32,45 @@
                              referencedColumnNames="id"/>
             </column>
             <column name="failure_code" type="VARCHAR(100)"/>
-            <column name="correlation_id" type="UUID"><constraints nullable="false"/></column>
-            <column name="created_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
-            <column name="completed_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+            <column name="correlation_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="completed_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
         </createTable>
-        <sql>ALTER TABLE transactions ADD CONSTRAINT ck_transactions_type CHECK (type IN ('DEPOSIT', 'WITHDRAWAL', 'TRANSFER'))</sql>
-        <sql>ALTER TABLE transactions ADD CONSTRAINT ck_transactions_status CHECK (status IN ('COMPLETED', 'FAILED'))</sql>
-        <sql>ALTER TABLE transactions ADD CONSTRAINT ck_transactions_amount CHECK (amount &gt; 0)</sql>
-        <sql>ALTER TABLE transactions ADD CONSTRAINT ck_transactions_currency CHECK (currency IN ('EUR', 'USD'))</sql>
+        <sql>ALTER TABLE transactions
+            ADD CONSTRAINT ck_transactions_type CHECK (type IN ('DEPOSIT', 'WITHDRAWAL', 'TRANSFER'))</sql>
+        <sql>ALTER TABLE transactions
+            ADD CONSTRAINT ck_transactions_status CHECK (status IN ('COMPLETED', 'FAILED'))</sql>
+        <sql>ALTER TABLE transactions
+            ADD CONSTRAINT ck_transactions_amount CHECK (amount &gt; 0)</sql>
+        <sql>ALTER TABLE transactions
+            ADD CONSTRAINT ck_transactions_currency CHECK (currency IN ('EUR', 'USD'))</sql>
         <sql>
-            ALTER TABLE transactions ADD CONSTRAINT ck_transactions_accounts CHECK (
-                (type = 'DEPOSIT' AND source_account_id IS NULL AND destination_account_id IS NOT NULL)
-                OR (type = 'WITHDRAWAL' AND source_account_id IS NOT NULL AND destination_account_id IS NULL)
-                OR (type = 'TRANSFER' AND source_account_id IS NOT NULL AND destination_account_id IS NOT NULL
-                    AND source_account_id &lt;&gt; destination_account_id)
-            )
+            ALTER TABLE transactions
+                ADD CONSTRAINT ck_transactions_accounts CHECK (
+                    (type = 'DEPOSIT' AND source_account_id IS NULL AND destination_account_id IS NOT NULL)
+                        OR (type = 'WITHDRAWAL' AND source_account_id IS NOT NULL AND destination_account_id IS NULL)
+                        OR (type = 'TRANSFER' AND source_account_id IS NOT NULL AND destination_account_id IS NOT NULL
+                        AND source_account_id &lt;&gt; destination_account_id)
+                    )
         </sql>
         <sql>
-            ALTER TABLE transactions ADD CONSTRAINT ck_transactions_failure CHECK (
-                (status = 'COMPLETED' AND failure_code IS NULL)
-                OR (status = 'FAILED' AND failure_code IS NOT NULL)
-            )
+            ALTER TABLE transactions
+                ADD CONSTRAINT ck_transactions_failure CHECK (
+                    (status = 'COMPLETED' AND failure_code IS NULL)
+                        OR (status = 'FAILED' AND failure_code IS NOT NULL)
+                    )
         </sql>
 
         <createTable tableName="transaction_entries">
-            <column name="id" type="BIGSERIAL"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="id" type="BIGSERIAL">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
             <column name="transaction_id" type="UUID">
                 <constraints nullable="false" foreignKeyName="fk_transaction_entries_transaction"
                              referencedTableName="transactions" referencedColumnNames="id"/>
@@ -55,12 +79,20 @@
                 <constraints nullable="false" foreignKeyName="fk_transaction_entries_account"
                              referencedTableName="accounts" referencedColumnNames="id"/>
             </column>
-            <column name="amount_delta" type="NUMERIC(19,4)"><constraints nullable="false"/></column>
-            <column name="balance_after" type="NUMERIC(19,4)"><constraints nullable="false"/></column>
-            <column name="created_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+            <column name="amount_delta" type="NUMERIC(19,4)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="balance_after" type="NUMERIC(19,4)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
         </createTable>
-        <sql>ALTER TABLE transaction_entries ADD CONSTRAINT ck_transaction_entries_delta CHECK (amount_delta &lt;&gt; 0)</sql>
-        <sql>ALTER TABLE transaction_entries ADD CONSTRAINT ck_transaction_entries_balance CHECK (balance_after &gt;= 0)</sql>
+        <sql>ALTER TABLE transaction_entries
+            ADD CONSTRAINT ck_transaction_entries_delta CHECK (amount_delta &lt;&gt; 0)</sql>
+        <sql>ALTER TABLE transaction_entries
+            ADD CONSTRAINT ck_transaction_entries_balance CHECK (balance_after &gt;= 0)</sql>
         <addUniqueConstraint tableName="transaction_entries" columnNames="transaction_id,account_id"
                              constraintName="uk_transaction_entries_transaction_account"/>
         <createIndex tableName="transaction_entries" indexName="ix_transaction_entries_account_history">
@@ -70,7 +102,9 @@
         </createIndex>
 
         <createTable tableName="money_operation_idempotency">
-            <column name="id" type="BIGSERIAL"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="id" type="BIGSERIAL">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
             <column name="customer_id" type="BIGINT">
                 <constraints nullable="false" foreignKeyName="fk_money_idempotency_customer"
                              referencedTableName="customers" referencedColumnNames="user_id"/>
@@ -79,28 +113,46 @@
                 <constraints nullable="false" foreignKeyName="fk_money_idempotency_account"
                              referencedTableName="accounts" referencedColumnNames="id"/>
             </column>
-            <column name="operation_type" type="VARCHAR(20)"><constraints nullable="false"/></column>
-            <column name="idempotency_key" type="UUID"><constraints nullable="false"/></column>
-            <column name="request_hash" type="VARCHAR(64)"><constraints nullable="false"/></column>
-            <column name="status" type="VARCHAR(20)"><constraints nullable="false"/></column>
+            <column name="operation_type" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="idempotency_key" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="request_hash" type="VARCHAR(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
             <column name="transaction_id" type="UUID">
                 <constraints foreignKeyName="fk_money_idempotency_transaction" referencedTableName="transactions"
                              referencedColumnNames="id"/>
             </column>
             <column name="response_status" type="INT"/>
             <column name="response_body" type="JSONB"/>
-            <column name="expires_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
-            <column name="created_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
-            <column name="updated_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+            <column name="expires_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
         </createTable>
-        <sql>ALTER TABLE money_operation_idempotency ADD CONSTRAINT ck_money_idempotency_operation CHECK (operation_type IN ('DEPOSIT', 'WITHDRAWAL', 'TRANSFER'))</sql>
-        <sql>ALTER TABLE money_operation_idempotency ADD CONSTRAINT ck_money_idempotency_status CHECK (status IN ('IN_PROGRESS', 'COMPLETED', 'FAILED'))</sql>
+        <sql>ALTER TABLE money_operation_idempotency
+            ADD CONSTRAINT ck_money_idempotency_operation CHECK (operation_type IN ('DEPOSIT', 'WITHDRAWAL', 'TRANSFER'))</sql>
+        <sql>ALTER TABLE money_operation_idempotency
+            ADD CONSTRAINT ck_money_idempotency_status CHECK (status IN ('IN_PROGRESS', 'COMPLETED', 'FAILED'))</sql>
         <sql>
-            ALTER TABLE money_operation_idempotency ADD CONSTRAINT ck_money_idempotency_final CHECK (
-                (status = 'IN_PROGRESS' AND transaction_id IS NULL AND response_status IS NULL AND response_body IS NULL)
-                OR (status IN ('COMPLETED', 'FAILED') AND transaction_id IS NOT NULL
-                    AND response_status IS NOT NULL AND response_body IS NOT NULL)
-            )
+            ALTER TABLE money_operation_idempotency
+                ADD CONSTRAINT ck_money_idempotency_final CHECK (
+                    (status = 'IN_PROGRESS' AND transaction_id IS NULL AND response_status IS NULL AND
+                     response_body IS NULL)
+                        OR (status IN ('COMPLETED', 'FAILED') AND transaction_id IS NOT NULL
+                        AND response_status IS NOT NULL AND response_body IS NOT NULL)
+                    )
         </sql>
         <addUniqueConstraint tableName="money_operation_idempotency"
                              columnNames="customer_id,account_id,operation_type,idempotency_key"
@@ -110,20 +162,30 @@
         </createIndex>
 
         <createTable tableName="daily_limit_usage">
-            <column name="id" type="BIGSERIAL"><constraints primaryKey="true" nullable="false"/></column>
+            <column name="id" type="BIGSERIAL">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
             <column name="account_id" type="BIGINT">
                 <constraints nullable="false" foreignKeyName="fk_daily_usage_account"
                              referencedTableName="accounts" referencedColumnNames="id"/>
             </column>
-            <column name="operation_type" type="VARCHAR(20)"><constraints nullable="false"/></column>
-            <column name="usage_date" type="DATE"><constraints nullable="false"/></column>
+            <column name="operation_type" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="usage_date" type="DATE">
+                <constraints nullable="false"/>
+            </column>
             <column name="used_amount" type="NUMERIC(19,4)" defaultValueNumeric="0">
                 <constraints nullable="false"/>
             </column>
-            <column name="updated_at" type="TIMESTAMPTZ"><constraints nullable="false"/></column>
+            <column name="updated_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
         </createTable>
-        <sql>ALTER TABLE daily_limit_usage ADD CONSTRAINT ck_daily_usage_operation CHECK (operation_type IN ('WITHDRAWAL', 'TRANSFER'))</sql>
-        <sql>ALTER TABLE daily_limit_usage ADD CONSTRAINT ck_daily_usage_amount CHECK (used_amount &gt;= 0)</sql>
+        <sql>ALTER TABLE daily_limit_usage
+            ADD CONSTRAINT ck_daily_usage_operation CHECK (operation_type IN ('WITHDRAWAL', 'TRANSFER'))</sql>
+        <sql>ALTER TABLE daily_limit_usage
+            ADD CONSTRAINT ck_daily_usage_amount CHECK (used_amount &gt;= 0)</sql>
         <addUniqueConstraint tableName="daily_limit_usage" columnNames="account_id,operation_type,usage_date"
                              constraintName="uk_daily_usage_scope"/>
         <createIndex tableName="daily_limit_usage" indexName="ix_daily_usage_date">
@@ -132,16 +194,23 @@
 
         <sql splitStatements="false">
             CREATE FUNCTION reject_immutable_financial_record_change()
-            RETURNS trigger
-            LANGUAGE plpgsql
+                RETURNS trigger
+                LANGUAGE plpgsql
             AS $$
             BEGIN
-                RAISE EXCEPTION 'financial record is immutable' USING ERRCODE = '23514';
+                RAISE
+            EXCEPTION 'financial record is immutable' USING ERRCODE = '23514';
             END;
             $$
         </sql>
-        <sql>CREATE TRIGGER trg_transactions_immutable BEFORE UPDATE OR DELETE ON transactions FOR EACH ROW EXECUTE FUNCTION reject_immutable_financial_record_change()</sql>
-        <sql>CREATE TRIGGER trg_transaction_entries_immutable BEFORE UPDATE OR DELETE ON transaction_entries FOR EACH ROW EXECUTE FUNCTION reject_immutable_financial_record_change()</sql>
-        <sql>CREATE TRIGGER trg_audit_events_immutable BEFORE UPDATE OR DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION reject_immutable_financial_record_change()</sql>
+        <sql>CREATE TRIGGER trg_transactions_immutable
+            BEFORE UPDATE OR DELETE ON transactions FOR EACH ROW
+        EXECUTE FUNCTION reject_immutable_financial_record_change()</sql>
+        <sql>CREATE TRIGGER trg_transaction_entries_immutable
+            BEFORE UPDATE OR DELETE ON transaction_entries FOR EACH ROW
+        EXECUTE FUNCTION reject_immutable_financial_record_change()</sql>
+        <sql>CREATE TRIGGER trg_audit_events_immutable
+            BEFORE UPDATE OR DELETE ON audit_events FOR EACH ROW
+        EXECUTE FUNCTION reject_immutable_financial_record_change()</sql>
     </changeSet>
 </databaseChangeLog>

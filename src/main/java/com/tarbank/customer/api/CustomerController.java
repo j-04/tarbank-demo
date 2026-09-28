@@ -114,9 +114,13 @@ public class CustomerController {
     private UUID parseKey(String value) {
         try {
             if (value == null || !UUID_V4.matcher(value)
-                                         .matches()) throw new IllegalArgumentException();
+                                         .matches()) {
+                throw new IllegalArgumentException();
+            }
             UUID key = UUID.fromString(value);
-            if (key.version() != 4 || key.variant() != 2) throw new IllegalArgumentException();
+            if (key.version() != 4 || key.variant() != 2) {
+                throw new IllegalArgumentException();
+            }
             return key;
         } catch (Exception exception) {
             throw validation();
@@ -131,7 +135,9 @@ public class CustomerController {
         String normalized = value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")
                 ? value.substring(1, value.length() - 1) : value;
         Matcher matcher = CUSTOMER_ETAG.matcher(normalized);
-        if (!matcher.matches()) throw validation();
+        if (!matcher.matches()) {
+            throw validation();
+        }
         try {
             return Integer.parseInt(matcher.group(1));
         } catch (NumberFormatException exception) {

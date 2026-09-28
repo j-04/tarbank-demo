@@ -98,7 +98,9 @@ public class CustomerLifecycleService {
     public CustomerPage list(String statusValue,
                              String cursor,
                              int limit) {
-        if (limit < 1 || limit > 100) throw validation();
+        if (limit < 1 || limit > 100) {
+            throw validation();
+        }
         UserStatus status = parseStatus(statusValue);
         Long afterId = decodeCursor(cursor);
         List<CustomerEntity> rows = customerQueries.findPage(status, afterId, limit + 1);
@@ -136,9 +138,15 @@ public class CustomerLifecycleService {
         customer.getUser()
                 .updateNames(firstName, request.firstNameSupplied(), middleName,
                              request.middleNameSupplied(), lastName, request.lastNameSupplied(), now);
-        if (request.firstNameSupplied()) changedFields.add("firstName");
-        if (request.middleNameSupplied()) changedFields.add("middleName");
-        if (request.lastNameSupplied()) changedFields.add("lastName");
+        if (request.firstNameSupplied()) {
+            changedFields.add("firstName");
+        }
+        if (request.middleNameSupplied()) {
+            changedFields.add("middleName");
+        }
+        if (request.lastNameSupplied()) {
+            changedFields.add("lastName");
+        }
 
         String email = validateEmail(request.emailSupplied(), request.getEmail());
         String phone = validatePhone(request.phoneNumberSupplied(), request.getPhoneNumber());
@@ -153,10 +161,18 @@ public class CustomerLifecycleService {
         String line2 = address == null ? null : optional(address.line2(), 255, "residentialAddress.line2");
         boolean customerChanged = customer.updateContact(email, request.emailSupplied(), phone, country, city,
                                                          postal, line1, line2);
-        if (request.emailSupplied()) changedFields.add("email");
-        if (request.phoneNumberSupplied()) changedFields.add("phoneNumber");
-        if (request.residentialAddressSupplied()) changedFields.add("residentialAddress");
-        if (changedFields.isEmpty()) throw validation();
+        if (request.emailSupplied()) {
+            changedFields.add("email");
+        }
+        if (request.phoneNumberSupplied()) {
+            changedFields.add("phoneNumber");
+        }
+        if (request.residentialAddressSupplied()) {
+            changedFields.add("residentialAddress");
+        }
+        if (changedFields.isEmpty()) {
+            throw validation();
+        }
 
         customers.flush();
         if (!customerChanged && customers.incrementVersionIfCurrent(id, expectedVersion) != 1) {
@@ -233,7 +249,9 @@ public class CustomerLifecycleService {
         lockCustomer(customerId);
         UserEntity customerUser = users.lockById(customerId)
                                        .orElseThrow(this::notFound);
-        if (customerUser.getRole() != com.tarbank.security.domain.Role.CUSTOMER) throw notFound();
+        if (customerUser.getRole() != com.tarbank.security.domain.Role.CUSTOMER) {
+            throw notFound();
+        }
         Instant now = Instant.now();
         customerUser.resetPassword(passwords.encode(newPassword), now);
         audits.save(new AuditEventEntity(actor, "CUSTOMER_PASSWORD_RESET", "CUSTOMER", customerId.toString(),
@@ -295,7 +313,9 @@ public class CustomerLifecycleService {
     }
 
     private UserStatus parseStatus(String value) {
-        if (value == null || value.isBlank()) return null;
+        if (value == null || value.isBlank()) {
+            return null;
+        }
         try {
             return UserStatus.valueOf(value);
         } catch (Exception exception) {
@@ -304,11 +324,15 @@ public class CustomerLifecycleService {
     }
 
     private Long decodeCursor(String cursor) {
-        if (cursor == null || cursor.isBlank()) return null;
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
         try {
             String decoded = new String(Base64.getUrlDecoder()
                                               .decode(cursor), StandardCharsets.UTF_8);
-            if (!decoded.matches("[1-9][0-9]*")) throw new IllegalArgumentException();
+            if (!decoded.matches("[1-9][0-9]*")) {
+                throw new IllegalArgumentException();
+            }
             return Long.valueOf(decoded);
         } catch (Exception exception) {
             throw validation();
@@ -324,7 +348,9 @@ public class CustomerLifecycleService {
 
     private String validatePhone(boolean supplied,
                                  String phone) {
-        if (!supplied) return null;
+        if (!supplied) {
+            return null;
+        }
         if (phone == null) {
             throw validation("phoneNumber", "NotNull", "must not be null");
         }
@@ -337,7 +363,9 @@ public class CustomerLifecycleService {
 
     private String validateEmail(boolean supplied,
                                  String email) {
-        if (!supplied || email == null) return null;
+        if (!supplied || email == null) {
+            return null;
+        }
         String value = email.trim();
         if (value.length() > 320 || !value.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
             throw validation("email", "Email", "must be a well-formed email address");
@@ -374,7 +402,9 @@ public class CustomerLifecycleService {
                             int max,
                             String field) {
         if (value == null || value.trim()
-                                  .isEmpty()) return null;
+                                  .isEmpty()) {
+            return null;
+        }
         if (value.trim()
                  .length() > max) {
             throw validation(field, "Size", "must be at most " + max + " characters");

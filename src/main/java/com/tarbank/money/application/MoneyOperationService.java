@@ -50,18 +50,29 @@ import java.util.function.Supplier;
 @Service
 public class MoneyOperationService {
     private static final Logger LOGGER = LogManager.getLogger(MoneyOperationService.class);
+
     private static final BigDecimal MINIMUM_WITHDRAWAL = new BigDecimal("5.0000");
+
     private static final BigDecimal MAXIMUM_BALANCE = new BigDecimal("999999999999999.9999");
 
     private final MoneyQueryRepository queries;
+
     private final MoneyTransactionRepository transactions;
+
     private final TransactionEntryRepository entries;
+
     private final MoneyOperationIdempotencyRepository idempotency;
+
     private final DailyLimitUsageRepository dailyUsage;
+
     private final AuditEventRepository audits;
+
     private final JsonMapper json;
+
     private final IdempotencyProperties idempotencyProperties;
+
     private final EffectiveLimitService limits;
+
     private final NotificationService notifications;
 
     public MoneyOperationService(MoneyQueryRepository queries,
@@ -84,6 +95,11 @@ public class MoneyOperationService {
         this.idempotencyProperties = idempotencyProperties;
         this.limits = limits;
         this.notifications = notifications;
+    }
+
+    public static ApiException validation() {
+        return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
+                                "The request is invalid.", "TAR-API-001");
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -126,7 +142,9 @@ public class MoneyOperationService {
                                              UUID key,
                                              String destinationAccountNumber,
                                              BigDecimal requestedAmount) {
-        if (sourceAccountNumber.equals(destinationAccountNumber)) throw validation();
+        if (sourceAccountNumber.equals(destinationAccountNumber)) {
+            throw validation();
+        }
         try {
             AccountScope owner = requireOwnedAccount(sourceAccountNumber, principal);
             BigDecimal amount = normalize(requestedAmount);
@@ -153,10 +171,14 @@ public class MoneyOperationService {
                 customerId, scope.id(), type.name(), key, requestHash,
                 now.plus(idempotencyProperties.retention()), now);
         MoneyOperationIdempotencyEntity record = queries.lockIdempotency(
-                        customerId, scope.id(), type, key)
-                .orElseThrow(this::requestInProgress);
-        if (!constantTimeEquals(record.getRequestHash(), requestHash)) throw idempotencyConflict();
-        if (inserted == 0) return replay(record, responseType);
+                                                                customerId, scope.id(), type, key)
+                                                        .orElseThrow(this::requestInProgress);
+        if (!constantTimeEquals(record.getRequestHash(), requestHash)) {
+            throw idempotencyConflict();
+        }
+        if (inserted == 0) {
+            return replay(record, responseType);
+        }
         if (record.getStatus() != MoneyIdempotencyStatus.IN_PROGRESS) {
             throw new IllegalStateException("New idempotency record is final.");
         }
@@ -167,18 +189,23 @@ public class MoneyOperationService {
                 : MoneyIdempotencyStatus.FAILED;
         int httpStatus = attempt.failure() == null
                 ? HttpStatus.CREATED.value()
-                : attempt.failure().httpStatus();
+                : attempt.failure()
+                         .httpStatus();
         Object response = attempt.failure() == null ? attempt.body() : attempt.failure();
         record.finalizeWith(attempt.transaction(), status, httpStatus, writeJson(response), limits.now());
-        notifyAfterCommit(attempt.transaction().getId(), type,
+        notifyAfterCommit(attempt.transaction()
+                                 .getId(), type,
                           attempt.failure() == null ? TransactionStatus.COMPLETED : TransactionStatus.FAILED,
-                          attempt.failure() == null ? null : attempt.failure().code());
+                          attempt.failure() == null ? null : attempt.failure()
+                                                                    .code());
         return new Result<>(httpStatus, attempt.body(), attempt.failure());
     }
 
     private <T> Result<T> replay(MoneyOperationIdempotencyEntity record,
                                  Class<T> responseType) {
-        if (record.getStatus() == MoneyIdempotencyStatus.IN_PROGRESS) throw requestInProgress();
+        if (record.getStatus() == MoneyIdempotencyStatus.IN_PROGRESS) {
+            throw requestInProgress();
+        }
         try {
             if (record.getStatus() == MoneyIdempotencyStatus.FAILED) {
                 return new Result<>(record.getResponseStatus(), null,
@@ -192,7 +219,7 @@ public class MoneyOperationService {
     }
 
     private Attempt<AccountOperationResponse> depositFirst(AccountScope expected,
-                                                            BigDecimal amount) {
+                                                           BigDecimal amount) {
         AccountEntity account = lockAccount(expected.id());
         UUID transactionId = UUID.randomUUID();
         Instant now = limits.now();
@@ -201,7 +228,8 @@ public class MoneyOperationService {
                           failure("ACCOUNT_NOT_ACTIVE", "The account is not active.", "TAR-MONEY-001"));
         }
 
-        BigDecimal balanceAfter = account.getBalance().add(amount);
+        BigDecimal balanceAfter = account.getBalance()
+                                         .add(amount);
         if (balanceAfter.compareTo(MAXIMUM_BALANCE) > 0) {
             return failed(transactionId, TransactionType.DEPOSIT, account, null, amount,
                           balanceLimitExceeded());
@@ -219,7 +247,7 @@ public class MoneyOperationService {
     }
 
     private Attempt<AccountOperationResponse> withdrawFirst(AccountScope expected,
-                                                             BigDecimal amount) {
+                                                            BigDecimal amount) {
         AccountEntity account = lockAccount(expected.id());
         UUID transactionId = UUID.randomUUID();
         Instant now = limits.now();
@@ -233,16 +261,24 @@ public class MoneyOperationService {
                                   "The withdrawal amount is below the permitted minimum.",
                                   "TAR-MONEY-002"));
         }
-        if (account.getBalance().compareTo(amount) < 0) {
+        if (account.getBalance()
+                   .compareTo(amount) < 0) {
             return failed(transactionId, TransactionType.WITHDRAWAL, account, null, amount,
                           failure("INSUFFICIENT_FUNDS", "The account has insufficient funds.",
                                   "TAR-MONEY-003"));
         }
 
-        LocalDate usageDate = limits.usageDate(account.getCustomer().getTimezone());
-        Usage usage = lockUsage(account, LimitOperationType.WITHDRAWAL, usageDate, now);
-        BigDecimal limit = limits.defaultLimit(account.getCurrency(), LimitOperationType.WITHDRAWAL);
-        if (usage.entity().getUsedAmount().add(amount).compareTo(limit) > 0) {
+        var limitWindow = limits.window(account.getCustomer()
+                                               .getTimezone(), now);
+        Usage usage = lockUsage(account, LimitOperationType.WITHDRAWAL,
+                                limitWindow.effectiveDate(), now);
+        BigDecimal limit = limits.effectiveLimit(
+                                         account, LimitOperationType.WITHDRAWAL, limitWindow)
+                                 .amount();
+        if (usage.entity()
+                 .getUsedAmount()
+                 .add(amount)
+                 .compareTo(limit) > 0) {
             removeUnusedRow(usage);
             return failed(transactionId, TransactionType.WITHDRAWAL, account, null, amount,
                           failure("DAILY_LIMIT_EXCEEDED",
@@ -250,13 +286,15 @@ public class MoneyOperationService {
                                   "TAR-MONEY-004"));
         }
 
-        BigDecimal balanceAfter = account.getBalance().subtract(amount);
+        BigDecimal balanceAfter = account.getBalance()
+                                         .subtract(amount);
         MoneyTransactionEntity transaction = insertTransaction(
                 transactionId, TransactionType.WITHDRAWAL, TransactionStatus.COMPLETED,
                 amount, account, account, null, null, now);
         queries.updateBalance(account.getId(), balanceAfter, now);
         insertEntry(transaction, account, amount.negate(), balanceAfter, now);
-        usage.entity().consume(amount, now);
+        usage.entity()
+             .consume(amount, now);
         insertAudit(account, transaction, TransactionType.WITHDRAWAL,
                     TransactionStatus.COMPLETED, null, now);
         return success(transaction, new AccountOperationResponse(
@@ -265,8 +303,8 @@ public class MoneyOperationService {
     }
 
     private Attempt<TransferResponse> transferFirst(AccountScope expectedSource,
-                                                     String destinationAccountNumber,
-                                                     BigDecimal amount) {
+                                                    String destinationAccountNumber,
+                                                    BigDecimal amount) {
         Long destinationId = queries.findAccountId(destinationAccountNumber)
                                     .orElseThrow(this::notFound);
         List<AccountEntity> locked = queries.lockAccounts(expectedSource.id(), destinationId);
@@ -286,20 +324,30 @@ public class MoneyOperationService {
                                   "Source and destination accounts must use the same currency.",
                                   "TAR-MONEY-005"));
         }
-        if (source.getBalance().compareTo(amount) < 0) {
+        if (source.getBalance()
+                  .compareTo(amount) < 0) {
             return failed(transactionId, TransactionType.TRANSFER, source, destination, amount,
                           failure("INSUFFICIENT_FUNDS", "The account has insufficient funds.",
                                   "TAR-TRANSFER-001"));
         }
-        if (destination.getBalance().add(amount).compareTo(MAXIMUM_BALANCE) > 0) {
+        if (destination.getBalance()
+                       .add(amount)
+                       .compareTo(MAXIMUM_BALANCE) > 0) {
             return failed(transactionId, TransactionType.TRANSFER, source, destination, amount,
                           balanceLimitExceeded());
         }
 
-        LocalDate usageDate = limits.usageDate(source.getCustomer().getTimezone());
-        Usage usage = lockUsage(source, LimitOperationType.TRANSFER, usageDate, now);
-        BigDecimal limit = limits.defaultLimit(source.getCurrency(), LimitOperationType.TRANSFER);
-        if (usage.entity().getUsedAmount().add(amount).compareTo(limit) > 0) {
+        var limitWindow = limits.window(source.getCustomer()
+                                              .getTimezone(), now);
+        Usage usage = lockUsage(source, LimitOperationType.TRANSFER,
+                                limitWindow.effectiveDate(), now);
+        BigDecimal limit = limits.effectiveLimit(
+                                         source, LimitOperationType.TRANSFER, limitWindow)
+                                 .amount();
+        if (usage.entity()
+                 .getUsedAmount()
+                 .add(amount)
+                 .compareTo(limit) > 0) {
             removeUnusedRow(usage);
             return failed(transactionId, TransactionType.TRANSFER, source, destination, amount,
                           failure("DAILY_LIMIT_EXCEEDED",
@@ -307,8 +355,10 @@ public class MoneyOperationService {
                                   "TAR-MONEY-004"));
         }
 
-        BigDecimal sourceBalanceAfter = source.getBalance().subtract(amount);
-        BigDecimal destinationBalanceAfter = destination.getBalance().add(amount);
+        BigDecimal sourceBalanceAfter = source.getBalance()
+                                              .subtract(amount);
+        BigDecimal destinationBalanceAfter = destination.getBalance()
+                                                        .add(amount);
         MoneyTransactionEntity transaction = insertTransaction(
                 transactionId, TransactionType.TRANSFER, TransactionStatus.COMPLETED,
                 amount, source, source, destination, null, now);
@@ -316,7 +366,8 @@ public class MoneyOperationService {
         queries.updateBalance(destination.getId(), destinationBalanceAfter, now);
         insertEntry(transaction, source, amount.negate(), sourceBalanceAfter, now);
         insertEntry(transaction, destination, amount, destinationBalanceAfter, now);
-        usage.entity().consume(amount, now);
+        usage.entity()
+             .consume(amount, now);
         insertAudit(source, transaction, TransactionType.TRANSFER,
                     TransactionStatus.COMPLETED, null, now);
         return success(transaction, new TransferResponse(
@@ -350,10 +401,15 @@ public class MoneyOperationService {
 
     private AccountScope requireOwnedAccount(String accountNumber,
                                              TarbankPrincipal principal) {
-        if (principal == null || principal.role() != Role.CUSTOMER) throw accessDenied();
+        if (principal == null || principal.role() != Role.CUSTOMER) {
+            throw accessDenied();
+        }
         AccountScope account = queries.findAccountScope(accountNumber)
                                       .orElseThrow(this::notFound);
-        if (!account.customerId().equals(principal.userId())) throw accessDenied();
+        if (!account.customerId()
+                    .equals(principal.userId())) {
+            throw accessDenied();
+        }
         return account;
     }
 
@@ -365,7 +421,8 @@ public class MoneyOperationService {
     private AccountEntity accountById(List<AccountEntity> accounts,
                                       Long id) {
         return accounts.stream()
-                       .filter(account -> account.getId().equals(id))
+                       .filter(account -> account.getId()
+                                                 .equals(id))
                        .findFirst()
                        .orElseThrow(this::notFound);
     }
@@ -385,7 +442,8 @@ public class MoneyOperationService {
     private void removeUnusedRow(Usage usage) {
         if (usage.inserted()) {
             queries.detach(usage.entity());
-            dailyUsage.deleteUnused(usage.entity().getId());
+            dailyUsage.deleteUnused(usage.entity()
+                                         .getId());
         }
     }
 
@@ -422,13 +480,16 @@ public class MoneyOperationService {
                 ? Map.of("type", type.name(), "status", status.name())
                 : Map.of("type", type.name(), "status", status.name(), "failureCode", failureCode);
         audits.save(new AuditEventEntity(
-                actorAccount.getCustomer().getUser(), "MONEY_OPERATION_" + status.name(),
-                "TRANSACTION", transaction.getId().toString(), CorrelationIdContext.current(),
+                actorAccount.getCustomer()
+                            .getUser(), "MONEY_OPERATION_" + status.name(),
+                "TRANSACTION", transaction.getId()
+                                          .toString(), CorrelationIdContext.current(),
                 writeJson(metadata), now));
     }
 
     private void setLockTimeout() {
-        long millis = Math.max(1, idempotencyProperties.lockTimeout().toMillis());
+        long millis = Math.max(1, idempotencyProperties.lockTimeout()
+                                                       .toMillis());
         idempotency.setLocalLockTimeout(millis + "ms");
     }
 
@@ -465,9 +526,10 @@ public class MoneyOperationService {
         String canonical = type.name() + "|" + sourceOrTarget + "|"
                 + (destination == null ? "-" : destination) + "|" + money(amount);
         try {
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256")
-                                 .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of()
+                            .formatHex(
+                                    MessageDigest.getInstance("SHA-256")
+                                                 .digest(canonical.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) {
             throw new IllegalStateException("Money request fingerprinting is unavailable.", exception);
         }
@@ -488,7 +550,8 @@ public class MoneyOperationService {
     }
 
     private String money(BigDecimal value) {
-        return value.setScale(4).toPlainString();
+        return value.setScale(4)
+                    .toPlainString();
     }
 
     private Failure balanceLimitExceeded() {
@@ -501,11 +564,6 @@ public class MoneyOperationService {
                             String message,
                             String internalCode) {
         return new Failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), code, message, internalCode);
-    }
-
-    public static ApiException validation() {
-        return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
-                                "The request is invalid.", "TAR-API-001");
     }
 
     private ApiException notFound() {

@@ -498,63 +498,63 @@ This phase adds same-day limit increases on top of the default-limit and daily-u
 
 ### 8.1 Add temporary limit overrides
 
-- [ ] Add the account-limit-overrides Liquibase changeset with account, operation type, limit amount, customer-local effective date, expiry instant, updating user, timestamps, and the unique account-operation-date key.
-- [ ] Add an expires_at index for future cleanup and retain the daily-usage date index from phase 6.
-- [ ] Model override operation type as WITHDRAWAL or TRANSFER only. Do not allow a deposit limit override.
-- [ ] Keep the override table separate from daily usage: an override defines the current-day allowance, while daily usage records consumed amount.
-- [ ] Do not add a midnight reset job. An override becomes ineffective when its effective date is no longer the customer's current local date or its expires_at instant has passed.
+- [x] Add the account-limit-overrides Liquibase changeset with account, operation type, limit amount, customer-local effective date, expiry instant, updating user, timestamps, and the unique account-operation-date key.
+- [x] Add an expires_at index for future cleanup and retain the daily-usage date index from phase 6.
+- [x] Model override operation type as WITHDRAWAL or TRANSFER only. Do not allow a deposit limit override.
+- [x] Keep the override table separate from daily usage: an override defines the current-day allowance, while daily usage records consumed amount.
+- [x] Do not add a midnight reset job. An override becomes ineffective when its effective date is no longer the customer's current local date or its expires_at instant has passed.
 
 ### 8.2 Implement effective-limit evaluation
 
-- [ ] Centralize effective-limit calculation in the limit service used by account detail, limit updates, and money operations.
-- [ ] Convert the injected current instant to the account owner's immutable IANA timezone and derive the customer-local date.
-- [ ] Use a current, unexpired override for that account, operation type, and local date when one exists; otherwise return the configured 1,000.0000 default in the account currency.
-- [ ] Calculate expires_at as the next midnight in the customer timezone, using timezone-aware date-time conversion so daylight-saving changes are handled correctly.
-- [ ] Keep expiry evaluation on the request path. Delayed scheduled cleanup must not leave an expired override effective.
-- [ ] Extend account detail to return the current effective withdrawal and transfer limits and null expiresAt when a configured default applies.
+- [x] Centralize effective-limit calculation in the limit service used by account detail, limit updates, and money operations.
+- [x] Convert the injected current instant to the account owner's immutable IANA timezone and derive the customer-local date.
+- [x] Use a current, unexpired override for that account, operation type, and local date when one exists; otherwise return the configured 1,000.0000 default in the account currency.
+- [x] Calculate expires_at as the next midnight in the customer timezone, using timezone-aware date-time conversion so daylight-saving changes are handled correctly.
+- [x] Keep expiry evaluation on the request path. Delayed scheduled cleanup must not leave an expired override effective.
+- [x] Extend account detail to return the current effective withdrawal and transfer limits and null expiresAt when a configured default applies.
 
 ### 8.3 Implement daily-limit updates
 
-- [ ] Define PATCH /api/v1/accounts/{accountNumber}/daily-limits for the account-owning customer or any ACTIVE manager.
-- [ ] Require both Idempotency-Key UUID v4 and If-Match account-vN. Perform idempotency replay lookup before the ETag check.
-- [ ] Require at least one requested limit and validate decimal scale, positive amount, and the inclusive 1,000.0000 through 3,000.0000 range.
-- [ ] Reject a requested limit below the current effective limit as DAILY_LIMIT_OUT_OF_RANGE. Treat an equal requested limit as an idempotent no-op that does not create a duplicate override or unnecessarily advance the account version.
-- [ ] Permit a later request to increase the same account, operation type, and effective date by updating its existing override.
-- [ ] Lock the account, verify owner or manager authority, check the ETag, calculate the current effective date, and write both requested limit changes atomically.
-- [ ] Increment account management_version once for a successful state change and return the next ETag. Do not increment it when a request is a no-op.
-- [ ] Reserve and finalize the generic API-request idempotency record in the same transaction, scoped to actor, daily-limit-update operation, account, and key.
-- [ ] Store response data for replay, including the first execution's effective date and expiration. A retry after local midnight replays the original result rather than creating a new override.
-- [ ] Write a safe DAILY_LIMIT_UPDATED audit event with the actor, account, correlation ID, and old and new limit values.
+- [x] Define PATCH /api/v1/accounts/{accountNumber}/daily-limits for the account-owning customer or any ACTIVE manager.
+- [x] Require both Idempotency-Key UUID v4 and If-Match account-vN. Perform idempotency replay lookup before the ETag check.
+- [x] Require at least one requested limit and validate decimal scale, positive amount, and the inclusive 1,000.0000 through 3,000.0000 range.
+- [x] Reject a requested limit below the current effective limit as DAILY_LIMIT_OUT_OF_RANGE. Treat an equal requested limit as an idempotent no-op that does not create a duplicate override or unnecessarily advance the account version.
+- [x] Permit a later request to increase the same account, operation type, and effective date by updating its existing override.
+- [x] Lock the account, verify owner or manager authority, check the ETag, calculate the current effective date, and write both requested limit changes atomically.
+- [x] Increment account management_version once for a successful state change and return the next ETag. Do not increment it when a request is a no-op.
+- [x] Reserve and finalize the generic API-request idempotency record in the same transaction, scoped to actor, daily-limit-update operation, account, and key.
+- [x] Store response data for replay, including the first execution's effective date and expiration. A retry after local midnight replays the original result rather than creating a new override.
+- [x] Write a safe DAILY_LIMIT_UPDATED audit event with the actor, account, correlation ID, and old and new limit values.
 
 ### 8.4 Keep limit updates compatible with money operations
 
-- [ ] Preserve the phase-6 money-operation lock order: account rows first, then source daily-usage rows.
-- [ ] Have a limit update lock the account before reading or writing overrides. It does not need to lock usage rows because lowering a limit is out of scope.
-- [ ] Accept the serial outcome of a concurrent increase and money operation: the operation either evaluates the old limit before the increase or the new limit after it, but never sees a partial override.
-- [ ] Do not alter historical daily usage or transaction entries when a limit is increased.
+- [x] Preserve the phase-6 money-operation lock order: account rows first, then source daily-usage rows.
+- [x] Have a limit update lock the account before reading or writing overrides. It does not need to lock usage rows because lowering a limit is out of scope.
+- [x] Accept the serial outcome of a concurrent increase and money operation: the operation either evaluates the old limit before the increase or the new limit after it, but never sees a partial override.
+- [x] Do not alter historical daily usage or transaction entries when a limit is increased.
 
 ### 8.5 Implement account-history reads
 
-- [ ] Define GET /api/v1/accounts/{accountNumber}/transactions for the account-owning customer or any ACTIVE manager.
-- [ ] Enforce ownership in the service for customers and use the existing global manager authorization policy.
-- [ ] Read only immutable transaction entries. Failed business operations have no entries and therefore do not appear in account history.
-- [ ] Return the documented safe fields: transaction ID, type, completed status, signed amount delta, balance after, currency, and creation time.
-- [ ] Use newest-first ordering by created_at DESC and id DESC.
-- [ ] Implement an opaque cursor containing the last entry position and bind it to the account and active filter set.
-- [ ] For the next page, query only rows older than the cursor tuple for the same account. New entries created after a traversal begins appear only in a new traversal.
-- [ ] Support bounded page size and optional from and to timestamp filters. Validate the range and reject a cursor reused with different filters or a different account.
-- [ ] Use the existing account_id, created_at DESC, id DESC index; do not load all account entries and paginate in memory.
+- [x] Define GET /api/v1/accounts/{accountNumber}/transactions for the account-owning customer or any ACTIVE manager.
+- [x] Enforce ownership in the service for customers and use the existing global manager authorization policy.
+- [x] Read only immutable transaction entries. Failed business operations have no entries and therefore do not appear in account history.
+- [x] Return the documented safe fields: transaction ID, type, completed status, signed amount delta, balance after, currency, and creation time.
+- [x] Use newest-first ordering by created_at DESC and id DESC.
+- [x] Implement an opaque cursor containing the last entry position and bind it to the account and active filter set.
+- [x] For the next page, query only rows older than the cursor tuple for the same account. New entries created after a traversal begins appear only in a new traversal.
+- [x] Support bounded page size and optional from and to timestamp filters. Validate the range and reject a cursor reused with different filters or a different account.
+- [x] Use the existing account_id, created_at DESC, id DESC index; do not load all account entries and paginate in memory.
 
 ### 8.6 Test limits and history
 
-- [ ] Test default effective limits, valid same-day increases, both operation types independently, maximum limits, no-op equal requests, and rejected decreases.
-- [ ] Test customer ownership, global manager access, missing or stale ETags, idempotency replay, conflicting key reuse, and an after-midnight retry.
-- [ ] Test timezone and daylight-saving boundaries with a fixed clock, including computed expiry at the next local midnight.
-- [ ] Test an increase racing with a withdrawal or transfer and verify a serial result with no partial override or incorrect usage.
-- [ ] Test history authorization, page-size and filter validation, and safe response fields.
-- [ ] Insert entries sharing the same created_at and verify cursor pages have no duplicate or skipped rows because id breaks the tie.
-- [ ] Add an entry after the first page and verify it does not appear in that traversal's next page but does appear in a new traversal.
-- [ ] Verify failed business transactions do not appear in history and that history reads do not modify entries, balances, usage, or timestamps.
+- [x] Test default effective limits, valid same-day increases, both operation types independently, maximum limits, no-op equal requests, and rejected decreases.
+- [x] Test customer ownership, global manager access, missing or stale ETags, idempotency replay, conflicting key reuse, and an after-midnight retry.
+- [x] Test timezone and daylight-saving boundaries with a fixed clock, including computed expiry at the next local midnight.
+- [x] Test an increase racing with a withdrawal or transfer and verify a serial result with no partial override or incorrect usage.
+- [x] Test history authorization, page-size and filter validation, and safe response fields.
+- [x] Insert entries sharing the same created_at and verify cursor pages have no duplicate or skipped rows because id breaks the tie.
+- [x] Add an entry after the first page and verify it does not appear in that traversal's next page but does appear in a new traversal.
+- [x] Verify failed business transactions do not appear in history and that history reads do not modify entries, balances, usage, or timestamps.
 
 ### Completion checklist
 

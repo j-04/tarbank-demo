@@ -32,9 +32,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -70,66 +68,88 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
         String manager = login("manager", "TestPass123!");
 
         String list = mvc.perform(get("/api/v1/customers").param("limit", "1")
-                                          .header("Authorization", "Bearer " + manager))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertThat(list).contains("nextCursor").doesNotContain("L1000001").doesNotContain("documentNumber");
+                                                          .header("Authorization", "Bearer " + manager))
+                         .andExpect(status().isOk())
+                         .andReturn()
+                         .getResponse()
+                         .getContentAsString();
+        assertThat(list).contains("nextCursor")
+                        .doesNotContain("L1000001")
+                        .doesNotContain("documentNumber");
         mvc.perform(get("/api/v1/customers").param("status", "UNKNOWN")
-                            .header("Authorization", "Bearer " + manager))
-                .andExpect(status().isBadRequest());
+                                            .header("Authorization", "Bearer " + manager))
+           .andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/customers").param("cursor", "not-a-cursor")
-                            .header("Authorization", "Bearer " + manager))
-                .andExpect(status().isBadRequest());
+                                            .header("Authorization", "Bearer " + manager))
+           .andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/customers").param("limit", "not-a-number")
-                            .header("Authorization", "Bearer " + manager))
-                .andExpect(status().isBadRequest());
+                                            .header("Authorization", "Bearer " + manager))
+           .andExpect(status().isBadRequest());
 
         var detail = mvc.perform(get("/api/v1/customers/{id}", id)
                                          .header("Authorization", "Bearer " + manager))
-                .andExpect(status().isOk()).andReturn().getResponse();
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse();
         assertThat(detail.getHeader("ETag")).isEqualTo("\"customer-v0\"");
-        assertThat(detail.getContentAsString()).doesNotContain("L1000001").doesNotContain("passwordHash");
+        assertThat(detail.getContentAsString()).doesNotContain("L1000001")
+                                               .doesNotContain("passwordHash");
 
         mvc.perform(patch("/api/v1/customers/{id}", id).header("Authorization", "Bearer " + manager)
-                            .contentType(MediaType.APPLICATION_JSON).content("{\"phoneNumber\":\"+381601111111\"}"))
-                .andExpect(status().isPreconditionRequired());
+                                                       .contentType(MediaType.APPLICATION_JSON)
+                                                       .content("{\"phoneNumber\":\"+381601111111\"}"))
+           .andExpect(status().isPreconditionRequired());
         var updated = mvc.perform(patch("/api/v1/customers/{id}", id).header("Authorization", "Bearer " + manager)
-                                          .header("If-Match", "customer-v0").contentType(MediaType.APPLICATION_JSON)
-                                          .content("{\"firstName\":\"Alicia\",\"phoneNumber\":\"+381601111111\"}"))
-                .andExpect(status().isOk()).andReturn().getResponse();
+                                                                     .header("If-Match", "customer-v0")
+                                                                     .contentType(MediaType.APPLICATION_JSON)
+                                                                     .content("{\"firstName\":\"Alicia\",\"phoneNumber\":\"+381601111111\"}"))
+                         .andExpect(status().isOk())
+                         .andReturn()
+                         .getResponse();
         assertThat(updated.getHeader("ETag")).isEqualTo("\"customer-v1\"");
         assertThat(updated.getContentAsString()).contains("Alicia", "+381601111111");
         mvc.perform(patch("/api/v1/customers/{id}", id).header("Authorization", "Bearer " + manager)
-                            .header("If-Match", "customer-v0").contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"lastName\":\"Stale\"}"))
-                .andExpect(status().isPreconditionFailed());
+                                                       .header("If-Match", "customer-v0")
+                                                       .contentType(MediaType.APPLICATION_JSON)
+                                                       .content("{\"lastName\":\"Stale\"}"))
+           .andExpect(status().isPreconditionFailed());
         mvc.perform(patch("/api/v1/customers/{id}", id).header("Authorization", "Bearer " + manager)
-                            .header("If-Match", "customer-v1").contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"timezone\":\"UTC\"}"))
-                .andExpect(status().isBadRequest());
+                                                       .header("If-Match", "customer-v1")
+                                                       .contentType(MediaType.APPLICATION_JSON)
+                                                       .content("{\"timezone\":\"UTC\"}"))
+           .andExpect(status().isBadRequest());
 
         String customerToken = login("lifecycleone", "StrongPwd123");
         mvc.perform(get("/api/v1/customers").header("Authorization", "Bearer " + customerToken))
-                .andExpect(status().isForbidden());
+           .andExpect(status().isForbidden());
     }
 
     @Test
     void statusTransitionsCascadeWithCustomerFirstLockingAndUnblockDoesNotRestoreAccounts() throws Exception {
         Long id = createCustomer("statusflow", "S1000001");
-        var customer = customers.findById(id).orElseThrow();
-        var manager = managers.findById(managerId()).orElseThrow();
+        var customer = customers.findById(id)
+                                .orElseThrow();
+        var manager = managers.findById(managerId())
+                              .orElseThrow();
         AccountEntity account = accounts.saveAndFlush(new AccountEntity("TB90000000000001", customer, Currency.EUR, manager, Instant.now()));
         String customerToken = login("statusflow", "StrongPwd123");
         String managerToken = login("manager", "TestPass123!");
 
         patchStatus(id, "customer-v0", "BLOCKED", managerToken).andExpect(status().isOk());
-        assertThat(accounts.findById(account.getId()).orElseThrow().getStatus()).isEqualTo(AccountStatus.BLOCKED);
+        assertThat(accounts.findById(account.getId())
+                           .orElseThrow()
+                           .getStatus()).isEqualTo(AccountStatus.BLOCKED);
         mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer " + customerToken))
-                .andExpect(status().isForbidden());
+           .andExpect(status().isForbidden());
 
         patchStatus(id, "customer-v1", "ACTIVE", managerToken).andExpect(status().isOk());
-        assertThat(accounts.findById(account.getId()).orElseThrow().getStatus()).isEqualTo(AccountStatus.BLOCKED);
+        assertThat(accounts.findById(account.getId())
+                           .orElseThrow()
+                           .getStatus()).isEqualTo(AccountStatus.BLOCKED);
         patchStatus(id, "customer-v2", "DEACTIVATED", managerToken).andExpect(status().isOk());
-        assertThat(accounts.findById(account.getId()).orElseThrow().getStatus()).isEqualTo(AccountStatus.DEACTIVATED);
+        assertThat(accounts.findById(account.getId())
+                           .orElseThrow()
+                           .getStatus()).isEqualTo(AccountStatus.DEACTIVATED);
         patchStatus(id, "customer-v3", "ACTIVE", managerToken).andExpect(status().isConflict());
         patchStatus(id, "customer-v3", "BLOCKED", managerToken).andExpect(status().isConflict());
         patchStatus(id, "customer-v3", "DEACTIVATED", managerToken).andExpect(status().isConflict());
@@ -150,15 +170,22 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
         Long id = createCustomer("resetflow", "R1000001");
         String oldToken = login("resetflow", "StrongPwd123");
         String manager = login("manager", "TestPass123!");
-        String key = UUID.randomUUID().toString();
+        String key = UUID.randomUUID()
+                         .toString();
 
-        resetPassword(id, UUID.randomUUID().toString(), "ResetPwd123!", oldToken)
+        resetPassword(id, UUID.randomUUID()
+                              .toString(), "ResetPwd123!", oldToken)
                 .andExpect(status().isForbidden());
-        var invalidReset = resetPassword(id, UUID.randomUUID().toString(), "too-short", manager)
-                .andExpect(status().isBadRequest()).andReturn().getResponse();
+        var invalidReset = resetPassword(id, UUID.randomUUID()
+                                                 .toString(), "too-short", manager)
+                .andExpect(status().isBadRequest())
+                .andReturn()
+                .getResponse();
         assertThat(invalidReset.getContentAsString()).contains("newPassword", "PasswordPolicy");
         var resetResponse = resetPassword(id, key, "ResetPwd123!", manager)
-                .andExpect(status().isOk()).andReturn().getResponse();
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse();
         assertThat(resetResponse.getContentAsString())
                 .contains("PASSWORD_RESET")
                 .doesNotContain("ResetPwd123!", "passwordHash");
@@ -170,7 +197,7 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
         String storedFingerprint = requestFingerprint(key);
         assertThat(storedFingerprint).isNotEqualTo(legacyFingerprint);
         mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer " + oldToken))
-                .andExpect(status().isUnauthorized());
+           .andExpect(status().isUnauthorized());
 
         jdbc.update("update api_request_idempotency set request_hash=? where idempotency_key=?",
                     legacyFingerprint, UUID.fromString(key));
@@ -178,13 +205,15 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
         assertThat(jdbc.queryForObject("select credential_version from users where id=?", Integer.class, id)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select password_hash from users where id=?", String.class, id))
                 .isEqualTo(passwordHash);
-        assertThat(requestFingerprint(key)).isEqualTo(storedFingerprint).isNotEqualTo(legacyFingerprint);
+        assertThat(requestFingerprint(key)).isEqualTo(storedFingerprint)
+                                           .isNotEqualTo(legacyFingerprint);
 
         String afterFirstReset = login("resetflow", "ResetPwd123!");
-        resetPassword(id, UUID.randomUUID().toString(), "OtherPwd123!", manager).andExpect(status().isOk());
+        resetPassword(id, UUID.randomUUID()
+                              .toString(), "OtherPwd123!", manager).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("select credential_version from users where id=?", Integer.class, id)).isEqualTo(2);
         mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer " + afterFirstReset))
-                .andExpect(status().isUnauthorized());
+           .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -202,7 +231,7 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
                                 .header("If-Match", "customer-v0")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"firstName\":\"Changed\",\"" + flag + "\":false}"))
-                    .andExpect(status().isBadRequest());
+               .andExpect(status().isBadRequest());
         }
 
         var nullPhone = mvc.perform(patch("/api/v1/customers/{id}", id)
@@ -210,7 +239,9 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
                                             .header("If-Match", "customer-v0")
                                             .contentType(MediaType.APPLICATION_JSON)
                                             .content("{\"firstName\":\"Changed\",\"phoneNumber\":null}"))
-                .andExpect(status().isBadRequest()).andReturn().getResponse();
+                           .andExpect(status().isBadRequest())
+                           .andReturn()
+                           .getResponse();
         assertThat(nullPhone.getContentAsString()).contains("phoneNumber", "NotNull");
 
         var nullAddress = mvc.perform(patch("/api/v1/customers/{id}", id)
@@ -218,7 +249,9 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
                                               .header("If-Match", "customer-v0")
                                               .contentType(MediaType.APPLICATION_JSON)
                                               .content("{\"firstName\":\"Changed\",\"residentialAddress\":null}"))
-                .andExpect(status().isBadRequest()).andReturn().getResponse();
+                             .andExpect(status().isBadRequest())
+                             .andReturn()
+                             .getResponse();
         assertThat(nullAddress.getContentAsString()).contains("residentialAddress", "NotNull");
 
         mvc.perform(patch("/api/v1/customers/{id}", id)
@@ -226,11 +259,13 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
                             .header("If-Match", "customer-v0")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"firstName\":\"Changed\",\"phoneNumber\":null,\"phoneNumberSupplied\":false}"))
-                .andExpect(status().isBadRequest());
+           .andExpect(status().isBadRequest());
 
         var unchanged = mvc.perform(get("/api/v1/customers/{id}", id)
                                             .header("Authorization", "Bearer " + manager))
-                .andExpect(status().isOk()).andReturn().getResponse();
+                           .andExpect(status().isOk())
+                           .andReturn()
+                           .getResponse();
         assertThat(unchanged.getHeader("ETag")).isEqualTo("\"customer-v0\"");
         assertThat(unchanged.getContentAsString()).contains("Alice", "+381601234567", "Example 1");
         assertThat(jdbc.queryForObject(
@@ -253,7 +288,9 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
 
             assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 412);
         }
-        assertThat(customers.findById(id).orElseThrow().getVersion()).isEqualTo(1);
+        assertThat(customers.findById(id)
+                            .orElseThrow()
+                            .getVersion()).isEqualTo(1);
     }
 
     @Test
@@ -264,9 +301,11 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
 
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first = executor.submit(() -> resetStatusAfterSignal(
-                    start, id, UUID.randomUUID().toString(), "FirstPwd123!", manager));
+                    start, id, UUID.randomUUID()
+                                   .toString(), "FirstPwd123!", manager));
             var second = executor.submit(() -> resetStatusAfterSignal(
-                    start, id, UUID.randomUUID().toString(), "OtherPwd123!", manager));
+                    start, id, UUID.randomUUID()
+                                   .toString(), "OtherPwd123!", manager));
             start.countDown();
 
             assertThat(List.of(first.get(), second.get())).containsOnly(200);
@@ -291,15 +330,20 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
 
         try (var executor = Executors.newFixedThreadPool(2)) {
             var resetRequest = executor.submit(() -> resetPassword(
-                    id, UUID.randomUUID().toString(), "NameReset12!", manager)
-                    .andReturn().getResponse().getStatus());
+                    id, UUID.randomUUID()
+                            .toString(), "NameReset12!", manager)
+                    .andReturn()
+                    .getResponse()
+                    .getStatus());
             assertThat(encoderEntered.await(10, TimeUnit.SECONDS)).isTrue();
             var profileRequest = executor.submit(() -> mvc.perform(patch("/api/v1/customers/{id}", id)
-                            .header("Authorization", "Bearer " + manager)
-                            .header("If-Match", "customer-v0")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"firstName\":\"Renamed\"}"))
-                    .andReturn().getResponse().getStatus());
+                                                                           .header("Authorization", "Bearer " + manager)
+                                                                           .header("If-Match", "customer-v0")
+                                                                           .contentType(MediaType.APPLICATION_JSON)
+                                                                           .content("{\"firstName\":\"Renamed\"}"))
+                                                          .andReturn()
+                                                          .getResponse()
+                                                          .getStatus());
             try {
                 assertThat(awaitCustomerRowLockWait()).isTrue();
             } finally {
@@ -312,13 +356,15 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
             reset(passwordEncoder);
         }
 
-        var user = customers.findById(id).orElseThrow().getUser();
+        var user = customers.findById(id)
+                            .orElseThrow()
+                            .getUser();
         assertThat(user.getFirstName()).isEqualTo("Renamed");
         assertThat(user.getCredentialVersion()).isEqualTo(1);
         assertThat(passwordEncoder.matches("NameReset12!", user.getPasswordHash())).isTrue();
         assertThat(passwordEncoder.matches("StrongPwd123", user.getPasswordHash())).isFalse();
         mvc.perform(get("/api/v1/accounts").header("Authorization", "Bearer " + oldToken))
-                .andExpect(status().isUnauthorized());
+           .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -332,11 +378,16 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
 
         try (var executor = Executors.newFixedThreadPool(2)) {
             var resetRequest = executor.submit(() -> resetPassword(
-                    id, UUID.randomUUID().toString(), "StateReset1!", manager)
-                    .andReturn().getResponse().getStatus());
+                    id, UUID.randomUUID()
+                            .toString(), "StateReset1!", manager)
+                    .andReturn()
+                    .getResponse()
+                    .getStatus());
             assertThat(encoderEntered.await(10, TimeUnit.SECONDS)).isTrue();
             var statusRequest = executor.submit(() -> patchStatus(
-                    id, "customer-v0", "BLOCKED", manager).andReturn().getResponse().getStatus());
+                    id, "customer-v0", "BLOCKED", manager).andReturn()
+                                                          .getResponse()
+                                                          .getStatus());
             try {
                 assertThat(awaitCustomerRowLockWait()).isTrue();
             } finally {
@@ -349,38 +400,54 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
             reset(passwordEncoder);
         }
 
-        var customer = customers.findById(id).orElseThrow();
-        assertThat(customer.getUser().getStatus().name()).isEqualTo("BLOCKED");
-        assertThat(customer.getUser().getCredentialVersion()).isEqualTo(1);
-        assertThat(passwordEncoder.matches("StateReset1!", customer.getUser().getPasswordHash())).isTrue();
-        assertThat(passwordEncoder.matches("StrongPwd123", customer.getUser().getPasswordHash())).isFalse();
+        var customer = customers.findById(id)
+                                .orElseThrow();
+        assertThat(customer.getUser()
+                           .getStatus()
+                           .name()).isEqualTo("BLOCKED");
+        assertThat(customer.getUser()
+                           .getCredentialVersion()).isEqualTo(1);
+        assertThat(passwordEncoder.matches("StateReset1!", customer.getUser()
+                                                                   .getPasswordHash())).isTrue();
+        assertThat(passwordEncoder.matches("StrongPwd123", customer.getUser()
+                                                                   .getPasswordHash())).isFalse();
 
         patchStatus(id, "customer-v1", "ACTIVE", manager).andExpect(status().isOk());
         mvc.perform(get("/api/v1/accounts").header("Authorization", "Bearer " + oldToken))
-                .andExpect(status().isUnauthorized());
+           .andExpect(status().isUnauthorized());
     }
 
     @Test
     void customerAccountAndAuditChangesRollBackTogether() throws Exception {
         Long id = createCustomer("rollbackflow", "C1000003");
-        var customer = customers.findById(id).orElseThrow();
-        var manager = managers.findById(managerId()).orElseThrow();
+        var customer = customers.findById(id)
+                                .orElseThrow();
+        var manager = managers.findById(managerId())
+                              .orElseThrow();
         AccountEntity account = accounts.saveAndFlush(
                 new AccountEntity("TB90000000000002", customer, Currency.USD, manager, Instant.now()));
         String managerToken = login("manager", "TestPass123!");
         int auditCount = jdbc.queryForObject("select count(*) from audit_events", Integer.class);
 
         doThrow(new IllegalStateException("forced audit failure"))
-                .when(audits).save(any(AuditEventEntity.class));
+                .when(audits)
+                .save(any(AuditEventEntity.class));
         try {
             patchStatus(id, "customer-v0", "BLOCKED", managerToken).andExpect(status().isInternalServerError());
         } finally {
             reset(audits);
         }
 
-        assertThat(customers.findById(id).orElseThrow().getUser().getStatus().name()).isEqualTo("ACTIVE");
-        assertThat(customers.findById(id).orElseThrow().getVersion()).isZero();
-        AccountEntity reloaded = accounts.findById(account.getId()).orElseThrow();
+        assertThat(customers.findById(id)
+                            .orElseThrow()
+                            .getUser()
+                            .getStatus()
+                            .name()).isEqualTo("ACTIVE");
+        assertThat(customers.findById(id)
+                            .orElseThrow()
+                            .getVersion()).isZero();
+        AccountEntity reloaded = accounts.findById(account.getId())
+                                         .orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(reloaded.getManagementVersion()).isZero();
         assertThat(jdbc.queryForObject("select count(*) from audit_events", Integer.class)).isEqualTo(auditCount);
@@ -397,7 +464,8 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
                 }
             }
             return invocation.callRealMethod();
-        }).when(passwordEncoder).encode(any(CharSequence.class));
+        }).when(passwordEncoder)
+          .encode(any(CharSequence.class));
     }
 
     private boolean awaitCustomerRowLockWait() throws InterruptedException {
@@ -408,7 +476,9 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
                             + "where datname=current_database() and wait_event_type='Lock' "
                             + "and lower(query) like '%select user_id from customers%'",
                     Integer.class);
-            if (waiting != null && waiting > 0) return true;
+            if (waiting != null && waiting > 0) {
+                return true;
+            }
             Thread.sleep(25);
         }
         return false;
@@ -421,8 +491,10 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
     }
 
     private String sha256(String value) throws Exception {
-        return HexFormat.of().formatHex(
-                MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        return HexFormat.of()
+                        .formatHex(
+                                MessageDigest.getInstance("SHA-256")
+                                             .digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
     private int updateStatusAfterSignal(CountDownLatch start,
@@ -435,7 +507,9 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
                                    .header("If-Match", "customer-v0")
                                    .contentType(MediaType.APPLICATION_JSON)
                                    .content(body))
-                .andReturn().getResponse().getStatus();
+                  .andReturn()
+                  .getResponse()
+                  .getStatus();
     }
 
     private int resetStatusAfterSignal(CountDownLatch start,
@@ -445,7 +519,9 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
                                        String token)
             throws Exception {
         start.await();
-        return resetPassword(id, key, password, token).andReturn().getResponse().getStatus();
+        return resetPassword(id, key, password, token).andReturn()
+                                                      .getResponse()
+                                                      .getStatus();
     }
 
     private org.springframework.test.web.servlet.ResultActions patchStatus(
@@ -454,8 +530,9 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
             String status,
             String token) throws Exception {
         return mvc.perform(patch("/api/v1/customers/{id}/status", id).header("Authorization", "Bearer " + token)
-                                   .header("If-Match", etag).contentType(MediaType.APPLICATION_JSON)
-                                   .content("{\"status\":\"" + status + "\"}"));
+                                                                     .header("If-Match", etag)
+                                                                     .contentType(MediaType.APPLICATION_JSON)
+                                                                     .content("{\"status\":\"" + status + "\"}"));
     }
 
     private org.springframework.test.web.servlet.ResultActions resetPassword(
@@ -464,16 +541,23 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
             String password,
             String token) throws Exception {
         return mvc.perform(post("/api/v1/customers/{id}/password-reset", id)
-                                   .header("Authorization", "Bearer " + token).header("Idempotency-Key", key)
-                                   .contentType(MediaType.APPLICATION_JSON).content("{\"newPassword\":\"" + password + "\"}"));
+                                   .header("Authorization", "Bearer " + token)
+                                   .header("Idempotency-Key", key)
+                                   .contentType(MediaType.APPLICATION_JSON)
+                                   .content("{\"newPassword\":\"" + password + "\"}"));
     }
 
     private Long createCustomer(String username,
                                 String document) throws Exception {
         String response = mvc.perform(post("/api/v1/customers").header("Authorization", "Bearer " + login("manager", "TestPass123!"))
-                                              .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
-                                              .content(customer(username, document)))
-                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+                                                               .header("Idempotency-Key", UUID.randomUUID()
+                                                                                              .toString())
+                                                               .contentType(MediaType.APPLICATION_JSON)
+                                                               .content(customer(username, document)))
+                             .andExpect(status().isCreated())
+                             .andReturn()
+                             .getResponse()
+                             .getContentAsString();
         return Long.valueOf(response.replaceFirst(".*\\\"customerId\\\":(\\d+).*", "$1"));
     }
 
@@ -484,8 +568,11 @@ class CustomerLifecycleIntegrationTest extends AbstractIntegrationTest {
     private String login(String username,
                          String password) throws Exception {
         String response = mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
-                                              .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+                                                                .content("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}"))
+                             .andExpect(status().isOk())
+                             .andReturn()
+                             .getResponse()
+                             .getContentAsString();
         return response.replaceFirst(".*\\\"accessToken\\\":\\\"([^\\\"]+)\\\".*", "$1");
     }
 

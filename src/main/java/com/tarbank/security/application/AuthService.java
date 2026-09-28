@@ -45,9 +45,10 @@ public class AuthService {
 
     public void logout(TarbankPrincipal principal) {
         Duration remaining = Duration.between(java.time.Instant.now(), principal.expiresAt());
-        if (!remaining.isNegative() && !remaining.isZero())
+        if (!remaining.isNegative() && !remaining.isZero()) {
             redis.opsForValue()
                  .set("jwt:invalidated:" + principal.tokenId(), "1", remaining);
+        }
     }
 
     public static class InvalidCredentialsException extends RuntimeException {

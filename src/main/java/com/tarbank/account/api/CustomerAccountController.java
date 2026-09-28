@@ -58,9 +58,13 @@ public class CustomerAccountController {
     private UUID parseKey(String value) {
         try {
             if (value == null || !UUID_V4.matcher(value)
-                                         .matches()) throw new IllegalArgumentException();
+                                         .matches()) {
+                throw new IllegalArgumentException();
+            }
             UUID key = UUID.fromString(value);
-            if (key.version() != 4 || key.variant() != 2) throw new IllegalArgumentException();
+            if (key.version() != 4 || key.variant() != 2) {
+                throw new IllegalArgumentException();
+            }
             return key;
         } catch (Exception exception) {
             throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",

@@ -20,7 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class MigrationIntegrationTest extends AbstractIntegrationTest {
     private static final List<String> EXPECTED_PUBLIC_TABLES = List.of(
-            "accounts", "api_request_idempotency", "audit_events", "customers", "daily_limit_usage",
+            "account_limit_overrides", "accounts", "api_request_idempotency", "audit_events",
+            "customers", "daily_limit_usage",
             "databasechangelog", "databasechangeloglock", "managers", "money_operation_idempotency",
             "transaction_entries", "transactions", "users");
 
@@ -30,7 +31,7 @@ class MigrationIntegrationTest extends AbstractIntegrationTest {
     @Test
     void appliesTheIdentityAndOnboardingSchemaToAFreshPostgreSqlDatabase() {
         assertThat(publicTables()).containsExactlyElementsOf(EXPECTED_PUBLIC_TABLES);
-        assertThat(changelogEntryCount()).isEqualTo(4);
+        assertThat(changelogEntryCount()).isEqualTo(5);
     }
 
     @Test

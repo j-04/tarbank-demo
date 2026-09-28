@@ -1,11 +1,14 @@
 package com.tarbank.account.api;
 
+import com.tarbank.account.application.AccountFeatureService;
 import com.tarbank.account.application.AccountService;
 import com.tarbank.account.domain.AccountStatus;
 import com.tarbank.account.domain.Currency;
 import com.tarbank.common.api.ApiSuccessResponse;
 import com.tarbank.common.http.ApiException;
 import com.tarbank.common.http.CorrelationIdContext;
+import com.tarbank.money.domain.TransactionStatus;
+import com.tarbank.money.domain.TransactionType;
 import com.tarbank.security.application.TarbankPrincipal;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -22,8 +25,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,10 +37,17 @@ import java.util.regex.Pattern;
 public class AccountController {
     private static final Pattern ACCOUNT_ETAG = Pattern.compile("^account-v(0|[1-9][0-9]*)$");
 
+    private static final Pattern UUID_V4 = Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$");
+
     private final AccountService accounts;
 
-    public AccountController(AccountService accounts) {
+    private final AccountFeatureService features;
+
+    public AccountController(AccountService accounts,
+                             AccountFeatureService features) {
         this.accounts = accounts;
+        this.features = features;
     }
 
     @GetMapping
@@ -69,6 +81,43 @@ public class AccountController {
                              .body(new ApiSuccessResponse<>(result.response(), CorrelationIdContext.current()));
     }
 
+    @PatchMapping("/{accountNumber}/daily-limits")
+    public ResponseEntity<ApiSuccessResponse<DailyLimitUpdateResponse>> updateDailyLimits(
+            @PathVariable String accountNumber,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @AuthenticationPrincipal TarbankPrincipal principal,
+            @Valid @RequestBody DailyLimitUpdateRequest request) {
+        var result = features.updateLimits(accountNumber, parseIfMatch(ifMatch), principal,
+                                           parseIdempotencyKey(idempotencyKey), request);
+        return ResponseEntity.status(result.status())
+                             .eTag(etag(result.body()
+                                              .version()))
+                             .body(new ApiSuccessResponse<>(result.body()
+                                                                  .response(),
+                                                            CorrelationIdContext.current()));
+    }
+
+    @GetMapping("/{accountNumber}/transactions")
+    public ApiSuccessResponse<TransactionHistoryPage> history(
+            @PathVariable String accountNumber,
+            @AuthenticationPrincipal TarbankPrincipal principal,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to) {
+        return new ApiSuccessResponse<>(features.history(accountNumber, principal, cursor, limit, from, to),
+                                        CorrelationIdContext.current());
+    }
+
+    private UUID parseIdempotencyKey(String value) {
+        if (value == null || !UUID_V4.matcher(value)
+                                     .matches()) {
+            throw validation();
+        }
+        return UUID.fromString(value);
+    }
+
     private int parseIfMatch(String value) {
         if (value == null) {
             throw new ApiException(HttpStatus.PRECONDITION_REQUIRED, "PRECONDITION_REQUIRED",
@@ -77,7 +126,9 @@ public class AccountController {
         String normalized = value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")
                 ? value.substring(1, value.length() - 1) : value;
         Matcher matcher = ACCOUNT_ETAG.matcher(normalized);
-        if (!matcher.matches()) throw validation();
+        if (!matcher.matches()) {
+            throw validation();
+        }
         try {
             return Integer.parseInt(matcher.group(1));
         } catch (NumberFormatException exception) {
@@ -122,5 +173,27 @@ public class AccountController {
     }
 
     public record AccountStatusResponse(String accountNumber, AccountStatus status) {
+    }
+
+    public record DailyLimitUpdateRequest(BigDecimal withdrawalLimit,
+                                          BigDecimal transferLimit) {
+    }
+
+    public record DailyLimitUpdateResponse(String accountNumber,
+                                           String withdrawalLimit,
+                                           String transferLimit,
+                                           Instant expiresAt) {
+    }
+
+    public record TransactionHistoryItem(UUID transactionId,
+                                         TransactionType type,
+                                         TransactionStatus status,
+                                         String amountDelta,
+                                         String balanceAfter,
+                                         Currency currency,
+                                         Instant createdAt) {
+    }
+
+    public record TransactionHistoryPage(List<TransactionHistoryItem> items, String nextCursor) {
     }
 }

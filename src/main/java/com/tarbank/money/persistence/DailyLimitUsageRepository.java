@@ -24,6 +24,6 @@ public interface DailyLimitUsageRepository extends Repository<DailyLimitUsageEnt
 
     @Modifying
     @Query(value = "delete from daily_limit_usage where id=:id and used_amount=0.0000",
-           nativeQuery = true)
+            nativeQuery = true)
     int deleteUnused(@Param("id") Long id);
 }

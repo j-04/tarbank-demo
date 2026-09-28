@@ -65,8 +65,10 @@ public class MoneyOperationController {
     }
 
     private <T> ResponseEntity<ApiSuccessResponse<T>> response(MoneyOperationService.Result<T> result) {
-        if (result.failure() != null) throw result.failure()
-                                                  .toException();
+        if (result.failure() != null) {
+            throw result.failure()
+                        .toException();
+        }
         return ResponseEntity.status(result.httpStatus())
                              .body(new ApiSuccessResponse<>(result.body(), CorrelationIdContext.current()));
     }
@@ -74,9 +76,13 @@ public class MoneyOperationController {
     private UUID parseKey(String value) {
         try {
             if (value == null || !UUID_V4.matcher(value)
-                                         .matches()) throw new IllegalArgumentException();
+                                         .matches()) {
+                throw new IllegalArgumentException();
+            }
             UUID key = UUID.fromString(value);
-            if (key.version() != 4 || key.variant() != 2) throw new IllegalArgumentException();
+            if (key.version() != 4 || key.variant() != 2) {
+                throw new IllegalArgumentException();
+            }
             return key;
         } catch (Exception exception) {
             throw MoneyOperationService.validation();

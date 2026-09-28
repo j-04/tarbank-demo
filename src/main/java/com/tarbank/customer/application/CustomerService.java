@@ -181,11 +181,17 @@ public class CustomerService {
 
     private void validateReplayStable(CreateCustomerRequest request,
                                       String username) {
-        if (!username.matches("^[a-z][a-z0-9._-]{2,31}$")) throw invalid();
-        if (!passwordPolicy.isValid(request.password(), username)) throw invalid();
+        if (!username.matches("^[a-z][a-z0-9._-]{2,31}$")) {
+            throw invalid();
+        }
+        if (!passwordPolicy.isValid(request.password(), username)) {
+            throw invalid();
+        }
         if (!request.phoneNumber()
                     .trim()
-                    .matches("^\\+[1-9]\\d{1,14}$")) throw invalid();
+                    .matches("^\\+[1-9]\\d{1,14}$")) {
+            throw invalid();
+        }
         country(request.residentialAddress()
                        .country());
         country(request.identityDocument()
@@ -209,7 +215,9 @@ public class CustomerService {
                    .expiresOn() != null
                 && request.identityDocument()
                           .expiresOn()
-                          .isBefore(LocalDate.now(clock))) throw invalid();
+                          .isBefore(LocalDate.now(clock))) {
+            throw invalid();
+        }
     }
 
     private ApiException translateUniqueConstraint(DataIntegrityViolationException exception) {
@@ -225,7 +233,9 @@ public class CustomerService {
 
     private String constraintName(Throwable exception) {
         for (Throwable current = exception; current != null; current = current.getCause()) {
-            if (current instanceof ConstraintViolationException violation) return violation.getConstraintName();
+            if (current instanceof ConstraintViolationException violation) {
+                return violation.getConstraintName();
+            }
         }
         return null;
     }
@@ -247,7 +257,9 @@ public class CustomerService {
     private String country(String value) {
         String country = trim(value).toUpperCase(Locale.ROOT);
         if (!Set.of(Locale.getISOCountries())
-                .contains(country)) throw invalid();
+                .contains(country)) {
+            throw invalid();
+        }
         return country;
     }
 
@@ -257,7 +269,9 @@ public class CustomerService {
 
     private String trim(String value) {
         if (value == null || value.trim()
-                                  .isEmpty()) throw invalid();
+                                  .isEmpty()) {
+            throw invalid();
+        }
         return value.trim();
     }
 

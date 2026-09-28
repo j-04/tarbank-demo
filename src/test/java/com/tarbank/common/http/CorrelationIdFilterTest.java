@@ -1,9 +1,6 @@
 package com.tarbank.common.http;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import com.tarbank.common.api.ApiSuccessResponse;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -11,9 +8,15 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
 class CorrelationIdFilterTest {
 
-    private final JsonMapper jsonMapper = JsonMapper.builder().build();
+    private final JsonMapper jsonMapper = JsonMapper.builder()
+                                                    .build();
+
     private final CorrelationIdFilter filter = new CorrelationIdFilter(jsonMapper);
 
     @Test
@@ -25,7 +28,8 @@ class CorrelationIdFilterTest {
 
         UUID correlationId = UUID.fromString(response.getHeader(CorrelationIdFilter.HEADER_NAME));
         JsonNode body = jsonMapper.readTree(response.getContentAsString());
-        assertThat(body.path("correlationId").asString()).isEqualTo(correlationId.toString());
+        assertThat(body.path("correlationId")
+                       .asString()).isEqualTo(correlationId.toString());
     }
 
     @Test
@@ -38,7 +42,9 @@ class CorrelationIdFilterTest {
         filter.doFilter(request, response, successfulResponseChain());
 
         assertThat(response.getHeader(CorrelationIdFilter.HEADER_NAME)).isEqualTo(supplied.toString());
-        assertThat(jsonMapper.readTree(response.getContentAsString()).path("correlationId").asString())
+        assertThat(jsonMapper.readTree(response.getContentAsString())
+                             .path("correlationId")
+                             .asString())
                 .isEqualTo(supplied.toString());
     }
 
@@ -55,7 +61,9 @@ class CorrelationIdFilterTest {
         assertThat(response.getStatus()).isEqualTo(400);
         assertThat(response.getHeader(CorrelationIdFilter.HEADER_NAME)).isNull();
         assertThat(response.getContentAsString()).doesNotContain("not-a-uuid");
-        assertThat(jsonMapper.readTree(response.getContentAsString()).path("correlationId").isNull()).isTrue();
+        assertThat(jsonMapper.readTree(response.getContentAsString())
+                             .path("correlationId")
+                             .isNull()).isTrue();
     }
 
     @Test
@@ -75,8 +83,9 @@ class CorrelationIdFilterTest {
     private jakarta.servlet.FilterChain successfulResponseChain() {
         return (ignoredRequest, response) -> {
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            response.getWriter().write(jsonMapper.writeValueAsString(
-                    new ApiSuccessResponse<>("ok", CorrelationIdContext.current())));
+            response.getWriter()
+                    .write(jsonMapper.writeValueAsString(
+                            new ApiSuccessResponse<>("ok", CorrelationIdContext.current())));
         };
     }
 }

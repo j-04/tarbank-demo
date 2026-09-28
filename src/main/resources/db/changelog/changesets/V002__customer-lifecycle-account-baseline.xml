@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<databaseChangeLog xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
     <changeSet id="V002-customer-lifecycle-account-baseline" author="tarbank">
         <createTable tableName="accounts">
@@ -43,10 +43,13 @@
             </column>
             <column name="deactivated_at" type="TIMESTAMPTZ"/>
         </createTable>
-        <sql>ALTER TABLE accounts ADD CONSTRAINT ck_accounts_currency CHECK (currency IN ('EUR', 'USD'))</sql>
-        <sql>ALTER TABLE accounts ADD CONSTRAINT ck_accounts_balance CHECK (balance &gt;= 0)</sql>
-        <sql>ALTER TABLE accounts ADD CONSTRAINT ck_accounts_status CHECK (status IN ('ACTIVE', 'BLOCKED',
-            'DEACTIVATED'))
+        <sql>ALTER TABLE accounts
+            ADD CONSTRAINT ck_accounts_currency CHECK (currency IN ('EUR', 'USD'))</sql>
+        <sql>ALTER TABLE accounts
+            ADD CONSTRAINT ck_accounts_balance CHECK (balance &gt;= 0)</sql>
+        <sql>ALTER TABLE accounts
+            ADD CONSTRAINT ck_accounts_status CHECK (status IN ('ACTIVE', 'BLOCKED',
+                                                                'DEACTIVATED'))
         </sql>
         <createIndex tableName="accounts" indexName="ix_accounts_customer_status_id">
             <column name="customer_id"/>

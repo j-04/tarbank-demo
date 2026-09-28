@@ -48,16 +48,23 @@ public class JwtService {
     public TarbankPrincipal verify(String token) {
         try {
             String[] parts = token.split("\\.", -1);
-            if (parts.length != 3 || !constantTime(parts[2], sign(parts[0] + "." + parts[1])))
+            if (parts.length != 3 || !constantTime(parts[2], sign(parts[0] + "." + parts[1]))) {
                 throw new IllegalArgumentException();
+            }
             Map<?, ?> header = jsonMapper.readValue(decode(parts[0]), Map.class);
-            if (!"HS256".equals(header.get("alg"))) throw new IllegalArgumentException();
+            if (!"HS256".equals(header.get("alg"))) {
+                throw new IllegalArgumentException();
+            }
             Map<?, ?> c = jsonMapper.readValue(decode(parts[1]), Map.class);
             if (!properties.issuer()
-                           .equals(c.get("iss"))) throw new IllegalArgumentException();
+                           .equals(c.get("iss"))) {
+                throw new IllegalArgumentException();
+            }
             long exp = number(c.get("exp")).longValue();
             if (Instant.now()
-                       .getEpochSecond() >= exp) throw new IllegalArgumentException();
+                       .getEpochSecond() >= exp) {
+                throw new IllegalArgumentException();
+            }
             return new TarbankPrincipal(Long.valueOf(String.valueOf(c.get("sub"))), Role.valueOf(String.valueOf(c.get("role"))), UUID.fromString(String.valueOf(c.get("jti"))), number(c.get("credentialVersion")).intValue(), Instant.ofEpochSecond(exp));
         } catch (Exception ex) {
             throw new IllegalArgumentException("Invalid access token.");
@@ -104,7 +111,9 @@ public class JwtService {
     }
 
     private Number number(Object o) {
-        if (o instanceof Number n) return n;
+        if (o instanceof Number n) {
+            return n;
+        }
         return Long.valueOf(String.valueOf(o));
     }
 

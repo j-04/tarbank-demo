@@ -36,15 +36,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -96,9 +92,12 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String source = createAccount(ownerId, "EUR", manager);
         String destination = createAccount(recipientId, "EUR", manager);
 
-        Response deposit = deposit(source, "200.0000", UUID.randomUUID().toString(), owner);
-        Response withdrawal = withdraw(source, "25.0000", UUID.randomUUID().toString(), owner);
-        Response transfer = transfer(source, destination, "50.0000", UUID.randomUUID().toString(), owner);
+        Response deposit = deposit(source, "200.0000", UUID.randomUUID()
+                                                           .toString(), owner);
+        Response withdrawal = withdraw(source, "25.0000", UUID.randomUUID()
+                                                              .toString(), owner);
+        Response transfer = transfer(source, destination, "50.0000", UUID.randomUUID()
+                                                                         .toString(), owner);
 
         assertThat(List.of(deposit.status(), withdrawal.status(), transfer.status())).containsOnly(201);
         UUID depositId = UUID.fromString(extract(deposit.body(), "transactionId"));
@@ -150,7 +149,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String owner = login("moneyidemowner", "StrongPwd123");
         String account = createAccount(ownerId, "USD", manager);
 
-        String depositKey = UUID.randomUUID().toString();
+        String depositKey = UUID.randomUUID()
+                                .toString();
         Response firstDeposit = deposit(account, "40", depositKey, owner);
         Response replayedDeposit = deposit(account, "40.0000", depositKey, owner);
         assertThat(replayedDeposit.status()).isEqualTo(201);
@@ -159,7 +159,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThat(balance(account)).isEqualByComparingTo("40.0000");
         assertThat(deposit(account, "41.0000", depositKey, owner).status()).isEqualTo(409);
 
-        String withdrawalKey = UUID.randomUUID().toString();
+        String withdrawalKey = UUID.randomUUID()
+                                   .toString();
         Response firstFailure = withdraw(account, "50.0000", withdrawalKey, owner);
         Response replayedFailure = withdraw(account, "50", withdrawalKey, owner);
         assertThat(firstFailure.status()).isEqualTo(422);
@@ -201,26 +202,35 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String eurDestination = createAccount(recipientId, "EUR", manager);
         String usdDestination = createAccount(recipientId, "USD", manager);
 
-        assertThat(deposit(source, "2000.0000", UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
-        assertFailure(withdraw(source, "4.9999", UUID.randomUUID().toString(), owner),
+        assertThat(deposit(source, "2000.0000", UUID.randomUUID()
+                                                    .toString(), owner).status()).isEqualTo(201);
+        assertFailure(withdraw(source, "4.9999", UUID.randomUUID()
+                                                     .toString(), owner),
                       "MINIMUM_WITHDRAWAL_AMOUNT");
-        assertFailure(withdraw(source, "1000.0001", UUID.randomUUID().toString(), owner),
+        assertFailure(withdraw(source, "1000.0001", UUID.randomUUID()
+                                                        .toString(), owner),
                       "DAILY_LIMIT_EXCEEDED");
-        assertFailure(transfer(source, eurDestination, "1000.0001", UUID.randomUUID().toString(), owner),
+        assertFailure(transfer(source, eurDestination, "1000.0001", UUID.randomUUID()
+                                                                        .toString(), owner),
                       "DAILY_LIMIT_EXCEEDED");
-        assertFailure(transfer(source, usdDestination, "10.0000", UUID.randomUUID().toString(), owner),
+        assertFailure(transfer(source, usdDestination, "10.0000", UUID.randomUUID()
+                                                                      .toString(), owner),
                       "CURRENCY_MISMATCH");
 
         String empty = createAccount(ownerId, "EUR", manager);
-        assertFailure(withdraw(empty, "5.0000", UUID.randomUUID().toString(), owner),
+        assertFailure(withdraw(empty, "5.0000", UUID.randomUUID()
+                                                    .toString(), owner),
                       "INSUFFICIENT_FUNDS");
 
         patchAccountStatus(source, "BLOCKED", manager);
-        assertFailure(deposit(source, "10.0000", UUID.randomUUID().toString(), owner),
+        assertFailure(deposit(source, "10.0000", UUID.randomUUID()
+                                                     .toString(), owner),
                       "ACCOUNT_NOT_ACTIVE");
-        assertFailure(withdraw(source, "10.0000", UUID.randomUUID().toString(), owner),
+        assertFailure(withdraw(source, "10.0000", UUID.randomUUID()
+                                                      .toString(), owner),
                       "ACCOUNT_NOT_ACTIVE");
-        assertFailure(transfer(source, eurDestination, "10.0000", UUID.randomUUID().toString(), owner),
+        assertFailure(transfer(source, eurDestination, "10.0000", UUID.randomUUID()
+                                                                      .toString(), owner),
                       "ACCOUNT_NOT_ACTIVE");
 
         assertThat(balance(source)).isEqualByComparingTo("2000.0000");
@@ -228,35 +238,41 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThat(balance(usdDestination)).isEqualByComparingTo("0.0000");
         assertThat(balance(empty)).isEqualByComparingTo("0.0000");
         assertThat(jdbc.queryForObject("""
-                select count(*) from transaction_entries e
-                join transactions t on t.id=e.transaction_id
-                where t.initiated_by_customer_id=? and t.status='FAILED'
-                """, Integer.class, ownerId)).isZero();
+                                               select count(*) from transaction_entries e
+                                               join transactions t on t.id=e.transaction_id
+                                               where t.initiated_by_customer_id=? and t.status='FAILED'
+                                               """, Integer.class, ownerId)).isZero();
         assertThat(jdbc.queryForObject("""
-                select count(*) from daily_limit_usage u
-                join accounts a on a.id=u.account_id
-                where a.customer_id=?
-                """, Integer.class, ownerId)).isZero();
+                                               select count(*) from daily_limit_usage u
+                                               join accounts a on a.id=u.account_id
+                                               where a.customer_id=?
+                                               """, Integer.class, ownerId)).isZero();
         assertThat(jdbc.queryForObject("""
-                select count(*) from transactions t
-                where t.initiated_by_customer_id=? and t.status='FAILED'
-                  and not exists (select 1 from audit_events e where e.target_id=t.id::text)
-                """, Integer.class, ownerId)).isZero();
+                                               select count(*) from transactions t
+                                               where t.initiated_by_customer_id=? and t.status='FAILED'
+                                                 and not exists (select 1 from audit_events e where e.target_id=t.id::text)
+                                               """, Integer.class, ownerId)).isZero();
         assertThat(jdbc.queryForObject("""
-                select count(*) from transactions t
-                where t.initiated_by_customer_id=? and t.status='FAILED'
-                  and not exists (select 1 from money_operation_idempotency i
-                                  where i.transaction_id=t.id and i.status='FAILED')
-                """, Integer.class, ownerId)).isZero();
+                                               select count(*) from transactions t
+                                               where t.initiated_by_customer_id=? and t.status='FAILED'
+                                                 and not exists (select 1 from money_operation_idempotency i
+                                                                 where i.transaction_id=t.id and i.status='FAILED')
+                                               """, Integer.class, ownerId)).isZero();
 
         int transactionCount = transactionCount(ownerId);
-        assertThat(transfer(source, source, "10.0000", UUID.randomUUID().toString(), owner).status()).isEqualTo(400);
-        assertThat(deposit(source, "0", UUID.randomUUID().toString(), owner).status()).isEqualTo(400);
-        assertThat(deposit(source, "1.00001", UUID.randomUUID().toString(), owner).status()).isEqualTo(400);
+        assertThat(transfer(source, source, "10.0000", UUID.randomUUID()
+                                                           .toString(), owner).status()).isEqualTo(400);
+        assertThat(deposit(source, "0", UUID.randomUUID()
+                                            .toString(), owner).status()).isEqualTo(400);
+        assertThat(deposit(source, "1.00001", UUID.randomUUID()
+                                                  .toString(), owner).status()).isEqualTo(400);
         assertThat(deposit(source, "10.0000", "not-a-uuid", owner).status()).isEqualTo(400);
-        assertThat(deposit(source, "10.0000", UUID.randomUUID().toString(), otherOwner).status()).isEqualTo(403);
-        assertThat(deposit(source, "10.0000", UUID.randomUUID().toString(), manager).status()).isEqualTo(403);
-        assertThat(deposit(source, "10.0000", UUID.randomUUID().toString(), null).status()).isEqualTo(401);
+        assertThat(deposit(source, "10.0000", UUID.randomUUID()
+                                                  .toString(), otherOwner).status()).isEqualTo(403);
+        assertThat(deposit(source, "10.0000", UUID.randomUUID()
+                                                  .toString(), manager).status()).isEqualTo(403);
+        assertThat(deposit(source, "10.0000", UUID.randomUUID()
+                                                  .toString(), null).status()).isEqualTo(401);
         assertThat(depositWithoutKey(source, "10.0000", owner).status()).isEqualTo(400);
         assertThat(transactionCount(ownerId)).isEqualTo(transactionCount);
         assertThat(otherId).isPositive();
@@ -268,7 +284,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         Long ownerId = createCustomer("moneydepositrace", "M6000008", manager);
         String owner = login("moneydepositrace", "StrongPwd123");
         String account = createAccount(ownerId, "EUR", manager);
-        String delayedKey = UUID.randomUUID().toString();
+        String delayedKey = UUID.randomUUID()
+                                .toString();
         CountDownLatch idempotencyLoaded = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
         pauseAfterIdempotency(delayedKey, idempotencyLoaded, resume);
@@ -279,7 +296,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
             var delayedRequest = executor.submit(() -> deposit(account, "200.0000", delayedKey, owner));
             assertThat(idempotencyLoaded.await(10, TimeUnit.SECONDS)).isTrue();
             competing = executor.submit(() -> deposit(
-                    account, "100.0000", UUID.randomUUID().toString(), owner)).get(10, TimeUnit.SECONDS);
+                                        account, "100.0000", UUID.randomUUID()
+                                                                 .toString(), owner))
+                                .get(10, TimeUnit.SECONDS);
             resume.countDown();
             delayed = delayedRequest.get(10, TimeUnit.SECONDS);
         } finally {
@@ -296,8 +315,10 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         Long ownerId = createCustomer("moneywithdrawrace", "M6000009", manager);
         String owner = login("moneywithdrawrace", "StrongPwd123");
         String account = createAccount(ownerId, "EUR", manager);
-        assertThat(deposit(account, "100.0000", UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
-        String delayedKey = UUID.randomUUID().toString();
+        assertThat(deposit(account, "100.0000", UUID.randomUUID()
+                                                    .toString(), owner).status()).isEqualTo(201);
+        String delayedKey = UUID.randomUUID()
+                                .toString();
         CountDownLatch idempotencyLoaded = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
         pauseAfterIdempotency(delayedKey, idempotencyLoaded, resume);
@@ -308,7 +329,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
             var delayedRequest = executor.submit(() -> withdraw(account, "70.0000", delayedKey, owner));
             assertThat(idempotencyLoaded.await(10, TimeUnit.SECONDS)).isTrue();
             competing = executor.submit(() -> withdraw(
-                    account, "70.0000", UUID.randomUUID().toString(), owner)).get(10, TimeUnit.SECONDS);
+                                        account, "70.0000", UUID.randomUUID()
+                                                                .toString(), owner))
+                                .get(10, TimeUnit.SECONDS);
             resume.countDown();
             delayed = delayedRequest.get(10, TimeUnit.SECONDS);
         } finally {
@@ -329,8 +352,10 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String owner = login("moneymixedrace", "StrongPwd123");
         String source = createAccount(ownerId, "EUR", manager);
         String destination = createAccount(recipientId, "EUR", manager);
-        assertThat(deposit(source, "100.0000", UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
-        String delayedKey = UUID.randomUUID().toString();
+        assertThat(deposit(source, "100.0000", UUID.randomUUID()
+                                                   .toString(), owner).status()).isEqualTo(201);
+        String delayedKey = UUID.randomUUID()
+                                .toString();
         CountDownLatch idempotencyLoaded = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
         pauseAfterIdempotency(delayedKey, idempotencyLoaded, resume);
@@ -342,7 +367,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                     source, destination, "70.0000", delayedKey, owner));
             assertThat(idempotencyLoaded.await(10, TimeUnit.SECONDS)).isTrue();
             competing = executor.submit(() -> withdraw(
-                    source, "70.0000", UUID.randomUUID().toString(), owner)).get(10, TimeUnit.SECONDS);
+                                        source, "70.0000", UUID.randomUUID()
+                                                               .toString(), owner))
+                                .get(10, TimeUnit.SECONDS);
             resume.countDown();
             delayed = delayedRequest.get(10, TimeUnit.SECONDS);
         } finally {
@@ -354,10 +381,10 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertReconciled(source, "30.0000");
         assertReconciled(destination, "0.0000");
         assertThat(jdbc.queryForObject("""
-                select count(*) from daily_limit_usage u
-                join accounts a on a.id=u.account_id
-                where a.account_number=? and u.operation_type='TRANSFER'
-                """, Integer.class, source)).isZero();
+                                               select count(*) from daily_limit_usage u
+                                               join accounts a on a.id=u.account_id
+                                               where a.account_number=? and u.operation_type='TRANSFER'
+                                               """, Integer.class, source)).isZero();
     }
 
     @Test
@@ -371,11 +398,14 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String firstSource = createAccount(firstOwnerId, "EUR", manager);
         String secondSource = createAccount(secondOwnerId, "EUR", manager);
         String destination = createAccount(recipientId, "EUR", manager);
-        assertThat(deposit(firstSource, "100.0000", UUID.randomUUID().toString(), firstOwner).status())
+        assertThat(deposit(firstSource, "100.0000", UUID.randomUUID()
+                                                        .toString(), firstOwner).status())
                 .isEqualTo(201);
-        assertThat(deposit(secondSource, "100.0000", UUID.randomUUID().toString(), secondOwner).status())
+        assertThat(deposit(secondSource, "100.0000", UUID.randomUUID()
+                                                         .toString(), secondOwner).status())
                 .isEqualTo(201);
-        String delayedKey = UUID.randomUUID().toString();
+        String delayedKey = UUID.randomUUID()
+                                .toString();
         CountDownLatch idempotencyLoaded = new CountDownLatch(1);
         CountDownLatch resume = new CountDownLatch(1);
         pauseAfterIdempotency(delayedKey, idempotencyLoaded, resume);
@@ -387,8 +417,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                     firstSource, destination, "60.0000", delayedKey, firstOwner));
             assertThat(idempotencyLoaded.await(10, TimeUnit.SECONDS)).isTrue();
             competing = executor.submit(() -> transfer(
-                    secondSource, destination, "40.0000", UUID.randomUUID().toString(), secondOwner))
-                    .get(10, TimeUnit.SECONDS);
+                                        secondSource, destination, "40.0000", UUID.randomUUID()
+                                                                                  .toString(), secondOwner))
+                                .get(10, TimeUnit.SECONDS);
             resume.countDown();
             delayed = delayedRequest.get(10, TimeUnit.SECONDS);
         } finally {
@@ -414,14 +445,18 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String owner = login("moneybalancecapacity", "StrongPwd123");
         String full = createAccount(ownerId, "EUR", manager);
         String source = createAccount(ownerId, "EUR", manager);
-        assertThat(deposit(full, "999999999999999.9999", UUID.randomUUID().toString(), owner).status())
+        assertThat(deposit(full, "999999999999999.9999", UUID.randomUUID()
+                                                             .toString(), owner).status())
                 .isEqualTo(201);
-        assertThat(deposit(source, "10.0000", UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+        assertThat(deposit(source, "10.0000", UUID.randomUUID()
+                                                  .toString(), owner).status()).isEqualTo(201);
 
-        String depositKey = UUID.randomUUID().toString();
+        String depositKey = UUID.randomUUID()
+                                .toString();
         Response depositFailure = deposit(full, "0.0001", depositKey, owner);
         Response depositReplay = deposit(full, "0.0001", depositKey, owner);
-        String transferKey = UUID.randomUUID().toString();
+        String transferKey = UUID.randomUUID()
+                                 .toString();
         Response transferFailure = transfer(source, full, "1.0000", transferKey, owner);
         Response transferReplay = transfer(source, full, "1.0000", transferKey, owner);
 
@@ -431,29 +466,29 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertReconciled(full, "999999999999999.9999");
         assertReconciled(source, "10.0000");
         assertThat(jdbc.queryForObject("""
-                select count(*) from transactions
-                where initiated_by_customer_id=? and status='FAILED'
-                  and failure_code='BALANCE_LIMIT_EXCEEDED'
-                """, Integer.class, ownerId)).isEqualTo(2);
+                                               select count(*) from transactions
+                                               where initiated_by_customer_id=? and status='FAILED'
+                                                 and failure_code='BALANCE_LIMIT_EXCEEDED'
+                                               """, Integer.class, ownerId)).isEqualTo(2);
         assertThat(jdbc.queryForObject("""
-                select count(*) from transaction_entries e
-                join transactions t on t.id=e.transaction_id
-                where t.initiated_by_customer_id=? and t.failure_code='BALANCE_LIMIT_EXCEEDED'
-                """, Integer.class, ownerId)).isZero();
+                                               select count(*) from transaction_entries e
+                                               join transactions t on t.id=e.transaction_id
+                                               where t.initiated_by_customer_id=? and t.failure_code='BALANCE_LIMIT_EXCEEDED'
+                                               """, Integer.class, ownerId)).isZero();
         assertThat(jdbc.queryForObject("""
-                select count(*) from money_operation_idempotency
-                where idempotency_key in (?, ?) and status='FAILED'
-                """, Integer.class, UUID.fromString(depositKey), UUID.fromString(transferKey))).isEqualTo(2);
+                                               select count(*) from money_operation_idempotency
+                                               where idempotency_key in (?, ?) and status='FAILED'
+                                               """, Integer.class, UUID.fromString(depositKey), UUID.fromString(transferKey))).isEqualTo(2);
         assertThat(jdbc.queryForObject("""
-                select count(*) from audit_events e
-                join transactions t on e.target_id=t.id::text
-                where t.initiated_by_customer_id=? and t.failure_code='BALANCE_LIMIT_EXCEEDED'
-                """, Integer.class, ownerId)).isEqualTo(2);
+                                               select count(*) from audit_events e
+                                               join transactions t on e.target_id=t.id::text
+                                               where t.initiated_by_customer_id=? and t.failure_code='BALANCE_LIMIT_EXCEEDED'
+                                               """, Integer.class, ownerId)).isEqualTo(2);
         assertThat(jdbc.queryForObject("""
-                select count(*) from daily_limit_usage u
-                join accounts a on a.id=u.account_id
-                where a.account_number=?
-                """, Integer.class, source)).isZero();
+                                               select count(*) from daily_limit_usage u
+                                               join accounts a on a.id=u.account_id
+                                               where a.account_number=?
+                                               """, Integer.class, source)).isZero();
     }
 
     @Test
@@ -462,9 +497,11 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         Long ownerId = createCustomer("moneynotifyowner", "M6000007", manager);
         String owner = login("moneynotifyowner", "StrongPwd123");
         String account = createAccount(ownerId, "EUR", manager);
-        doThrow(new IllegalStateException("adapter unavailable")).when(notifications).send(any());
+        doThrow(new IllegalStateException("adapter unavailable")).when(notifications)
+                                                                 .send(any());
 
-        Response result = deposit(account, "15.0000", UUID.randomUUID().toString(), owner);
+        Response result = deposit(account, "15.0000", UUID.randomUUID()
+                                                          .toString(), owner);
 
         assertThat(result.status()).isEqualTo(201);
         UUID transactionId = UUID.fromString(extract(result.body(), "transactionId"));
@@ -506,22 +543,27 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String secondOwner = login("phase7oppositetwo", "StrongPwd123");
         String firstAccount = createAccount(firstOwnerId, "EUR", manager);
         String secondAccount = createAccount(secondOwnerId, "EUR", manager);
-        assertThat(deposit(firstAccount, "200.0000", UUID.randomUUID().toString(), firstOwner).status())
+        assertThat(deposit(firstAccount, "200.0000", UUID.randomUUID()
+                                                         .toString(), firstOwner).status())
                 .isEqualTo(201);
-        assertThat(deposit(secondAccount, "200.0000", UUID.randomUUID().toString(), secondOwner).status())
+        assertThat(deposit(secondAccount, "200.0000", UUID.randomUUID()
+                                                          .toString(), secondOwner).status())
                 .isEqualTo(201);
 
         CyclicBarrier beforeLocks = new CyclicBarrier(2);
         doAnswer(invocation -> {
             beforeLocks.await(10, TimeUnit.SECONDS);
             return invocation.callRealMethod();
-        }).when(queries).lockAccounts(anyLong(), anyLong());
+        }).when(queries)
+          .lockAccounts(anyLong(), anyLong());
 
         List<Response> responses = concurrently(
                 () -> transfer(firstAccount, secondAccount, "50.0000",
-                               UUID.randomUUID().toString(), firstOwner),
+                               UUID.randomUUID()
+                                   .toString(), firstOwner),
                 () -> transfer(secondAccount, firstAccount, "50.0000",
-                               UUID.randomUUID().toString(), secondOwner));
+                               UUID.randomUUID()
+                                   .toString(), secondOwner));
 
         assertThat(responses).allSatisfy(response -> assertThat(response.status()).isEqualTo(201));
         for (Response response : responses) {
@@ -546,7 +588,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         Long ownerId = createCustomer("phase7statusrace", "M7000003", manager);
         String owner = login("phase7statusrace", "StrongPwd123");
         String account = createAccount(ownerId, "EUR", manager);
-        assertThat(deposit(account, "40.0000", UUID.randomUUID().toString(), owner).status())
+        assertThat(deposit(account, "40.0000", UUID.randomUUID()
+                                                   .toString(), owner).status())
                 .isEqualTo(201);
 
         Long accountId = jdbc.queryForObject(
@@ -560,13 +603,15 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                 throw new AssertionError("Timed out while holding the account lock.");
             }
             return result;
-        }).when(queries).lockAccount(accountId);
+        }).when(queries)
+          .lockAccount(accountId);
 
         Response moneyResult;
         Response statusResult;
         try (var executor = Executors.newFixedThreadPool(2)) {
             var moneyFuture = executor.submit(
-                    () -> deposit(account, "10.0000", UUID.randomUUID().toString(), owner));
+                    () -> deposit(account, "10.0000", UUID.randomUUID()
+                                                          .toString(), owner));
             assertThat(moneyLocked.await(10, TimeUnit.SECONDS)).isTrue();
             var statusFuture = executor.submit(() -> patchAccountStatusResponse(account, manager));
             awaitDatabaseLockWaiter();
@@ -582,7 +627,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "select status from accounts where account_number=?", String.class, account))
                 .isEqualTo("BLOCKED");
-        assertFailure(deposit(account, "5.0000", UUID.randomUUID().toString(), owner),
+        assertFailure(deposit(account, "5.0000", UUID.randomUUID()
+                                                     .toString(), owner),
                       "ACCOUNT_NOT_ACTIVE");
         assertReconciled(account, "50.0000");
     }
@@ -593,7 +639,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         Long ownerId = createCustomer("phase7usagerace", "M7000004", manager);
         String owner = login("phase7usagerace", "StrongPwd123");
         String account = createAccount(ownerId, "EUR", manager);
-        assertThat(deposit(account, "2000.0000", UUID.randomUUID().toString(), owner).status())
+        assertThat(deposit(account, "2000.0000", UUID.randomUUID()
+                                                     .toString(), owner).status())
                 .isEqualTo(201);
         assertThat(dailyUsageRowCount(account)).isZero();
 
@@ -603,13 +650,18 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         doAnswer(invocation -> {
             beforeLock.await(10, TimeUnit.SECONDS);
             return invocation.callRealMethod();
-        }).when(queries).lockAccount(accountId);
+        }).when(queries)
+          .lockAccount(accountId);
 
         List<Response> responses = concurrently(
-                () -> withdraw(account, "600.0000", UUID.randomUUID().toString(), owner),
-                () -> withdraw(account, "600.0000", UUID.randomUUID().toString(), owner));
+                () -> withdraw(account, "600.0000", UUID.randomUUID()
+                                                        .toString(), owner),
+                () -> withdraw(account, "600.0000", UUID.randomUUID()
+                                                        .toString(), owner));
 
-        assertThat(responses.stream().map(Response::status).toList())
+        assertThat(responses.stream()
+                            .map(Response::status)
+                            .toList())
                 .containsExactlyInAnyOrder(201, 422);
         assertThat(responses.stream()
                             .filter(response -> response.status() == 422)
@@ -623,30 +675,34 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                 "select count(*) from daily_limit_usage where used_amount > 1000.0000",
                 Integer.class)).isZero();
         assertThat(jdbc.queryForObject("""
-                select count(*) from (
-                    select account_id, operation_type, usage_date
-                    from daily_limit_usage
-                    group by account_id, operation_type, usage_date
-                    having count(*) > 1
-                ) duplicate_usage
-                """, Integer.class)).isZero();
+                                               select count(*) from (
+                                                   select account_id, operation_type, usage_date
+                                                   from daily_limit_usage
+                                                   group by account_id, operation_type, usage_date
+                                                   having count(*) > 1
+                                               ) duplicate_usage
+                                               """, Integer.class)).isZero();
         reset(queries);
 
         String separateAccount = createAccount(ownerId, "EUR", manager);
         String destination = createAccount(ownerId, "EUR", manager);
         assertThat(deposit(separateAccount, "2000.0000",
-                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                           UUID.randomUUID()
+                               .toString(), owner).status()).isEqualTo(201);
         assertThat(dailyUsageRowCount(separateAccount)).isZero();
         assertThat(withdraw(separateAccount, "600.0000",
-                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                            UUID.randomUUID()
+                                .toString(), owner).status()).isEqualTo(201);
         assertThat(transfer(separateAccount, destination, "600.0000",
-                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                            UUID.randomUUID()
+                                .toString(), owner).status()).isEqualTo(201);
         assertThat(dailyUsageRowCount(separateAccount)).isEqualTo(2);
         assertThat(usage(separateAccount, "WITHDRAWAL")).isEqualByComparingTo("600.0000");
         assertThat(usage(separateAccount, "TRANSFER")).isEqualByComparingTo("600.0000");
         assertThat(dailyUsageRowCount(destination)).isZero();
         assertThat(deposit(separateAccount, "10.0000",
-                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                           UUID.randomUUID()
+                               .toString(), owner).status()).isEqualTo(201);
         assertThat(usage(separateAccount, "WITHDRAWAL")).isEqualByComparingTo("600.0000");
         assertThat(usage(separateAccount, "TRANSFER")).isEqualByComparingTo("600.0000");
 
@@ -654,14 +710,18 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String firstTransferDestination = createAccount(ownerId, "EUR", manager);
         String secondTransferDestination = createAccount(ownerId, "EUR", manager);
         assertThat(deposit(transferSource, "2000.0000",
-                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
-        String firstTransferKey = UUID.randomUUID().toString();
-        String secondTransferKey = UUID.randomUUID().toString();
+                           UUID.randomUUID()
+                               .toString(), owner).status()).isEqualTo(201);
+        String firstTransferKey = UUID.randomUUID()
+                                      .toString();
+        String secondTransferKey = UUID.randomUUID()
+                                       .toString();
         CyclicBarrier beforeTransferLocks = new CyclicBarrier(2);
         doAnswer(invocation -> {
             beforeTransferLocks.await(10, TimeUnit.SECONDS);
             return invocation.callRealMethod();
-        }).when(queries).lockAccounts(anyLong(), anyLong());
+        }).when(queries)
+          .lockAccounts(anyLong(), anyLong());
 
         List<Response> transferResponses = concurrently(
                 () -> transfer(transferSource, firstTransferDestination, "600.0000",
@@ -669,7 +729,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                 () -> transfer(transferSource, secondTransferDestination, "600.0000",
                                secondTransferKey, owner));
 
-        assertThat(transferResponses.stream().map(Response::status).toList())
+        assertThat(transferResponses.stream()
+                                    .map(Response::status)
+                                    .toList())
                 .containsExactlyInAnyOrder(201, 422);
         assertThat(transferResponses.stream()
                                     .filter(response -> response.status() == 422)
@@ -679,18 +741,18 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThat(dailyUsageRowCount(transferSource)).isEqualTo(1);
         assertThat(usage(transferSource, "TRANSFER")).isEqualByComparingTo("600.0000");
         assertThat(jdbc.queryForObject("""
-                select count(*) from transaction_entries e
-                join money_operation_idempotency i on i.transaction_id=e.transaction_id
-                where i.idempotency_key in (?, ?)
-                """, Integer.class, UUID.fromString(firstTransferKey),
-                                      UUID.fromString(secondTransferKey))).isEqualTo(2);
+                                               select count(*) from transaction_entries e
+                                               join money_operation_idempotency i on i.transaction_id=e.transaction_id
+                                               where i.idempotency_key in (?, ?)
+                                               """, Integer.class, UUID.fromString(firstTransferKey),
+                                       UUID.fromString(secondTransferKey))).isEqualTo(2);
         assertThat(jdbc.queryForObject("""
-                select count(*) from transactions t
-                join money_operation_idempotency i on i.transaction_id=t.id
-                where i.idempotency_key in (?, ?) and t.status='FAILED'
-                  and t.failure_code='DAILY_LIMIT_EXCEEDED'
-                """, Integer.class, UUID.fromString(firstTransferKey),
-                                      UUID.fromString(secondTransferKey))).isEqualTo(1);
+                                               select count(*) from transactions t
+                                               join money_operation_idempotency i on i.transaction_id=t.id
+                                               where i.idempotency_key in (?, ?) and t.status='FAILED'
+                                                 and t.failure_code='DAILY_LIMIT_EXCEEDED'
+                                               """, Integer.class, UUID.fromString(firstTransferKey),
+                                       UUID.fromString(secondTransferKey))).isEqualTo(1);
         assertReconciled(transferSource, "1400.0000");
         assertThat(balance(firstTransferDestination).add(balance(secondTransferDestination)))
                 .isEqualByComparingTo("600.0000");
@@ -702,34 +764,40 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         String midnightTransferSource = createAccount(ownerId, "EUR", manager);
         String midnightTransferDestination = createAccount(ownerId, "EUR", manager);
         assertThat(deposit(midnightAccount, "1500.0000",
-                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                           UUID.randomUUID()
+                               .toString(), owner).status()).isEqualTo(201);
         assertThat(deposit(midnightTransferSource, "1500.0000",
-                           UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                           UUID.randomUUID()
+                               .toString(), owner).status()).isEqualTo(201);
         assertThat(withdraw(midnightAccount, "600.0000",
-                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                            UUID.randomUUID()
+                                .toString(), owner).status()).isEqualTo(201);
         assertThat(transfer(midnightTransferSource, midnightTransferDestination, "600.0000",
-                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                            UUID.randomUUID()
+                                .toString(), owner).status()).isEqualTo(201);
         when(clock.instant()).thenReturn(Instant.parse("2026-01-01T23:00:01Z"));
         assertThat(withdraw(midnightAccount, "600.0000",
-                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                            UUID.randomUUID()
+                                .toString(), owner).status()).isEqualTo(201);
         assertThat(transfer(midnightTransferSource, midnightTransferDestination, "600.0000",
-                            UUID.randomUUID().toString(), owner).status()).isEqualTo(201);
+                            UUID.randomUUID()
+                                .toString(), owner).status()).isEqualTo(201);
         assertThat(jdbc.query("""
-                select usage_date::text || ':' || used_amount::text
-                from daily_limit_usage u
-                join accounts a on a.id=u.account_id
-                where a.account_number=? and u.operation_type='WITHDRAWAL'
-                order by usage_date
-                """, (resultSet, rowNumber) -> resultSet.getString(1), midnightAccount))
+                                      select usage_date::text || ':' || used_amount::text
+                                      from daily_limit_usage u
+                                      join accounts a on a.id=u.account_id
+                                      where a.account_number=? and u.operation_type='WITHDRAWAL'
+                                      order by usage_date
+                                      """, (resultSet, rowNumber) -> resultSet.getString(1), midnightAccount))
                 .containsExactly("2026-01-01:600.0000", "2026-01-02:600.0000");
         assertReconciled(midnightAccount, "300.0000");
         assertThat(jdbc.query("""
-                select usage_date::text || ':' || used_amount::text
-                from daily_limit_usage u
-                join accounts a on a.id=u.account_id
-                where a.account_number=? and u.operation_type='TRANSFER'
-                order by usage_date
-                """, (resultSet, rowNumber) -> resultSet.getString(1), midnightTransferSource))
+                                      select usage_date::text || ':' || used_amount::text
+                                      from daily_limit_usage u
+                                      join accounts a on a.id=u.account_id
+                                      where a.account_number=? and u.operation_type='TRANSFER'
+                                      order by usage_date
+                                      """, (resultSet, rowNumber) -> resultSet.getString(1), midnightTransferSource))
                 .containsExactly("2026-01-01:600.0000", "2026-01-02:600.0000");
         assertReconciled(midnightTransferSource, "300.0000");
         assertReconciled(midnightTransferDestination, "1200.0000");
@@ -742,13 +810,15 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         Long ownerId = createCustomer("phase7idempotency", "M7000005", manager);
         String owner = login("phase7idempotency", "StrongPwd123");
         String account = createAccount(ownerId, "EUR", manager);
-        String key = UUID.randomUUID().toString();
+        String key = UUID.randomUUID()
+                         .toString();
 
         CyclicBarrier beforeReservation = new CyclicBarrier(2);
         doAnswer(invocation -> {
             beforeReservation.await(10, TimeUnit.SECONDS);
             return invocation.callRealMethod();
-        }).when(queries).findAccountScope(account);
+        }).when(queries)
+          .findAccountScope(account);
 
         List<Response> responses = concurrently(
                 () -> deposit(account, "25.0000", key, owner),
@@ -781,7 +851,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThat(balance(account)).isEqualByComparingTo("25.0000");
         reset(queries);
 
-        assertThat(deposit(account, "5.0000", UUID.randomUUID().toString(), owner).status())
+        assertThat(deposit(account, "5.0000", UUID.randomUUID()
+                                                  .toString(), owner).status())
                 .isEqualTo(201);
         assertThat(patchAccountStatusResponse(account, manager).status()).isEqualTo(200);
         assertThat(jdbc.queryForObject(
@@ -797,12 +868,18 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         var replayEnvelope = json.readTree(replay.body());
         assertThat(replay.status()).isEqualTo(original.status());
         assertThat(replayEnvelope.path("data")).isEqualTo(originalEnvelope.path("data"));
-        assertThat(replayEnvelope.path("data").path("balanceAfter").asString())
+        assertThat(replayEnvelope.path("data")
+                                 .path("balanceAfter")
+                                 .asString())
                 .isEqualTo("25.0000");
-        assertThat(replayEnvelope.path("data").path("completedAt"))
-                .isEqualTo(originalEnvelope.path("data").path("completedAt"));
-        assertThat(replayEnvelope.path("correlationId").asString())
-                .isNotEqualTo(originalEnvelope.path("correlationId").asString());
+        assertThat(replayEnvelope.path("data")
+                                 .path("completedAt"))
+                .isEqualTo(originalEnvelope.path("data")
+                                           .path("completedAt"));
+        assertThat(replayEnvelope.path("correlationId")
+                                 .asString())
+                .isNotEqualTo(originalEnvelope.path("correlationId")
+                                              .asString());
         assertThat(transactionCount(ownerId)).isEqualTo(transactionsBeforeReplay);
         assertThat(customerEntryCount(ownerId)).isEqualTo(entriesBeforeReplay);
         assertThat(moneyAuditCount()).isEqualTo(auditsBeforeReplay);
@@ -816,19 +893,20 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo(200);
         assertThat(balance(account)).isEqualByComparingTo("30.0000");
 
-        String failedKey = UUID.randomUUID().toString();
+        String failedKey = UUID.randomUUID()
+                               .toString();
         assertFailure(withdraw(account, "40.0000", failedKey, owner), "INSUFFICIENT_FUNDS");
         assertFailure(withdraw(account, "40", failedKey, owner), "INSUFFICIENT_FUNDS");
         assertThat(jdbc.queryForObject("""
-                select count(*) from transactions t
-                join money_operation_idempotency i on i.transaction_id=t.id
-                where i.idempotency_key=? and t.status='FAILED'
-                """, Integer.class, UUID.fromString(failedKey))).isEqualTo(1);
+                                               select count(*) from transactions t
+                                               join money_operation_idempotency i on i.transaction_id=t.id
+                                               where i.idempotency_key=? and t.status='FAILED'
+                                               """, Integer.class, UUID.fromString(failedKey))).isEqualTo(1);
         assertThat(jdbc.queryForObject("""
-                select count(*) from transaction_entries e
-                join money_operation_idempotency i on i.transaction_id=e.transaction_id
-                where i.idempotency_key=?
-                """, Integer.class, UUID.fromString(failedKey))).isZero();
+                                               select count(*) from transaction_entries e
+                                               join money_operation_idempotency i on i.transaction_id=e.transaction_id
+                                               where i.idempotency_key=?
+                                               """, Integer.class, UUID.fromString(failedKey))).isZero();
         assertAllAccountsReconciled();
     }
 
@@ -838,9 +916,11 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         Long ownerId = createCustomer("phase7rollback", "M7000006", manager);
         String owner = login("phase7rollback", "StrongPwd123");
         String account = createAccount(ownerId, "EUR", manager);
-        assertThat(deposit(account, "100.0000", UUID.randomUUID().toString(), owner).status())
+        assertThat(deposit(account, "100.0000", UUID.randomUUID()
+                                                    .toString(), owner).status())
                 .isEqualTo(201);
-        String key = UUID.randomUUID().toString();
+        String key = UUID.randomUUID()
+                         .toString();
 
         int transactionsBefore = transactionCount(ownerId);
         int entriesBefore = customerEntryCount(ownerId);
@@ -862,8 +942,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                 }
             });
             return result;
-        }).when(operations).withdraw(eq(account), any(), eq(idempotencyKey),
-                                    eq(new BigDecimal("25.0000")));
+        }).when(operations)
+          .withdraw(eq(account), any(), eq(idempotencyKey),
+                    eq(new BigDecimal("25.0000")));
 
         var result = mvc.perform(post("/api/v1/accounts/{account}/withdrawals", account)
                                          .header("Authorization", "Bearer " + owner)
@@ -872,7 +953,8 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                                          .content("{\"amount\":\"25.0000\"}"))
                         .andReturn();
 
-        assertThat(result.getResponse().getStatus()).isEqualTo(500);
+        assertThat(result.getResponse()
+                         .getStatus()).isEqualTo(500);
         assertThat(result.getResolvedException()).isInstanceOf(TestRollbackException.class);
         assertThat(writesFlushed.get()).isTrue();
         assertThat(hookReached.get()).isTrue();
@@ -892,9 +974,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         assertThat(usage(account, "WITHDRAWAL")).isEqualByComparingTo("25.0000");
         assertReconciled(account, "75.0000");
         assertThat(jdbc.queryForObject("""
-                select count(*) from money_operation_idempotency
-                where idempotency_key=? and status='COMPLETED'
-                """, Integer.class, UUID.fromString(key))).isEqualTo(1);
+                                               select count(*) from money_operation_idempotency
+                                               where idempotency_key=? and status='COMPLETED'
+                                               """, Integer.class, UUID.fromString(key))).isEqualTo(1);
     }
 
     private List<Response> concurrently(Callable<Response> first,
@@ -911,10 +993,12 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
             Integer waiters = jdbc.queryForObject("""
-                    select count(*) from pg_stat_activity
-                    where datname=current_database() and wait_event_type='Lock'
-                    """, Integer.class);
-            if (waiters != null && waiters > 0) return;
+                                                          select count(*) from pg_stat_activity
+                                                          where datname=current_database() and wait_event_type='Lock'
+                                                          """, Integer.class);
+            if (waiters != null && waiters > 0) {
+                return;
+            }
             Thread.sleep(25);
         }
         throw new AssertionError("Timed out waiting for the competing database lock.");
@@ -941,25 +1025,25 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
 
     private int dailyUsageRowCount(String account) {
         return jdbc.queryForObject("""
-                select count(*) from daily_limit_usage u
-                join accounts a on a.id=u.account_id
-                where a.account_number=?
-                """, Integer.class, account);
+                                           select count(*) from daily_limit_usage u
+                                           join accounts a on a.id=u.account_id
+                                           where a.account_number=?
+                                           """, Integer.class, account);
     }
 
     private int customerEntryCount(Long customerId) {
         return jdbc.queryForObject("""
-                select count(*) from transaction_entries e
-                join transactions t on t.id=e.transaction_id
-                where t.initiated_by_customer_id=?
-                """, Integer.class, customerId);
+                                           select count(*) from transaction_entries e
+                                           join transactions t on t.id=e.transaction_id
+                                           where t.initiated_by_customer_id=?
+                                           """, Integer.class, customerId);
     }
 
     private int moneyAuditCount() {
         return jdbc.queryForObject("""
-                select count(*) from audit_events
-                where target_type='TRANSACTION' and action like 'MONEY_OPERATION_%'
-                """, Integer.class);
+                                           select count(*) from audit_events
+                                           where target_type='TRANSACTION' and action like 'MONEY_OPERATION_%'
+                                           """, Integer.class);
     }
 
     private int customerMoneyIdempotencyCount(Long customerId) {
@@ -970,43 +1054,43 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
 
     private void assertAllAccountsReconciled() {
         assertThat(jdbc.queryForObject("""
-                select count(*) from (
-                    select a.id
-                    from accounts a
-                    left join transaction_entries e on e.account_id=a.id
-                    group by a.id, a.balance
-                    having a.balance <> coalesce(sum(e.amount_delta), 0)
-                ) unreconciled
-                """, Integer.class)).isZero();
-    }
-
-    private static final class TestRollbackException extends RuntimeException {
+                                               select count(*) from (
+                                                   select a.id
+                                                   from accounts a
+                                                   left join transaction_entries e on e.account_id=a.id
+                                                   group by a.id, a.balance
+                                                   having a.balance <> coalesce(sum(e.amount_delta), 0)
+                                               ) unreconciled
+                                               """, Integer.class)).isZero();
     }
 
     private void pauseAfterIdempotency(String key,
                                        CountDownLatch entered,
                                        CountDownLatch resume) {
         org.mockito.Mockito.doAnswer(invocation -> {
-            Object result = invocation.callRealMethod();
-            if (UUID.fromString(key).equals(invocation.getArgument(3))) {
-                entered.countDown();
-                if (!resume.await(15, TimeUnit.SECONDS)) {
-                    throw new AssertionError("Timed out waiting to resume the money operation.");
-                }
-            }
-            return result;
-        }).when(queries).lockIdempotency(any(), any(), any(), any());
+               Object result = invocation.callRealMethod();
+               if (UUID.fromString(key)
+                       .equals(invocation.getArgument(3))) {
+                   entered.countDown();
+                   if (!resume.await(15, TimeUnit.SECONDS)) {
+                       throw new AssertionError("Timed out waiting to resume the money operation.");
+                   }
+               }
+               return result;
+           })
+                           .when(queries)
+                           .lockIdempotency(any(), any(), any(), any());
     }
 
     private void assertReconciled(String accountNumber,
                                   String expectedBalance) {
         BigDecimal stored = balance(accountNumber);
         BigDecimal ledger = jdbc.queryForObject("""
-                select coalesce(sum(e.amount_delta), 0)
-                from transaction_entries e
-                join accounts a on a.id=e.account_id
-                where a.account_number=?
-                """, BigDecimal.class, accountNumber);
+                                                        select coalesce(sum(e.amount_delta), 0)
+                                                        from transaction_entries e
+                                                        join accounts a on a.id=e.account_id
+                                                        where a.account_number=?
+                                                        """, BigDecimal.class, accountNumber);
         assertThat(stored).isEqualByComparingTo(expectedBalance);
         assertThat(stored).isEqualByComparingTo(ledger);
     }
@@ -1023,9 +1107,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                                    String amount,
                                    String failureCode) {
         var row = jdbc.queryForMap("""
-                select type, status, amount, currency, failure_code, correlation_id
-                from transactions where id=?
-                """, id);
+                                           select type, status, amount, currency, failure_code, correlation_id
+                                           from transactions where id=?
+                                           """, id);
         assertThat(row.get("type")).isEqualTo(type);
         assertThat(row.get("status")).isEqualTo(status);
         assertThat((BigDecimal) row.get("amount")).isEqualByComparingTo(amount);
@@ -1037,13 +1121,15 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
     private void assertEntries(UUID transactionId,
                                List<Entry> expected) {
         List<Entry> entries = jdbc.query("""
-                select amount_delta, balance_after
-                from transaction_entries
-                where transaction_id=?
-                order by amount_delta
-                """, (rs, rowNum) -> new Entry(
-                rs.getBigDecimal("amount_delta").toPlainString(),
-                rs.getBigDecimal("balance_after").toPlainString()), transactionId);
+                                                 select amount_delta, balance_after
+                                                 from transaction_entries
+                                                 where transaction_id=?
+                                                 order by amount_delta
+                                                 """, (rs, rowNum) -> new Entry(
+                rs.getBigDecimal("amount_delta")
+                  .toPlainString(),
+                rs.getBigDecimal("balance_after")
+                  .toPlainString()), transactionId);
         assertThat(entries).hasSize(expected.size());
         for (Entry entry : expected) {
             assertThat(entries).anySatisfy(actual -> {
@@ -1058,14 +1144,15 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                                     String expectedDelta,
                                     String expectedBalanceAfter) {
         var row = jdbc.queryForMap("""
-                select e.amount_delta, e.balance_after
-                from transaction_entries e
-                join accounts a on a.id=e.account_id
-                where e.transaction_id=? and a.account_number=?
-                """, transactionId, accountNumber);
+                                           select e.amount_delta, e.balance_after
+                                           from transaction_entries e
+                                           join accounts a on a.id=e.account_id
+                                           where e.transaction_id=? and a.account_number=?
+                                           """, transactionId, accountNumber);
         assertThat((BigDecimal) row.get("amount_delta")).isEqualByComparingTo(expectedDelta);
         assertThat((BigDecimal) row.get("balance_after")).isEqualByComparingTo(expectedBalanceAfter);
     }
+
     private BigDecimal balance(String accountNumber) {
         return jdbc.queryForObject("select balance from accounts where account_number=?",
                                    BigDecimal.class, accountNumber);
@@ -1074,10 +1161,10 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
     private BigDecimal usage(String accountNumber,
                              String type) {
         return jdbc.queryForObject("""
-                select u.used_amount from daily_limit_usage u
-                join accounts a on a.id=u.account_id
-                where a.account_number=? and u.operation_type=?
-                """, BigDecimal.class, accountNumber, type);
+                                           select u.used_amount from daily_limit_usage u
+                                           join accounts a on a.id=u.account_id
+                                           where a.account_number=? and u.operation_type=?
+                                           """, BigDecimal.class, accountNumber, type);
     }
 
     private int transactionCount(Long customerId) {
@@ -1125,9 +1212,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
     private Response money(MockHttpServletRequestBuilder request,
                            String token) throws Exception {
         var result = mvc.perform(request
-                                           .header("Authorization", "Bearer " + token)
-                                           .contentType(MediaType.APPLICATION_JSON))
-                .andReturn();
+                                         .header("Authorization", "Bearer " + token)
+                                         .contentType(MediaType.APPLICATION_JSON))
+                        .andReturn();
         var response = result.getResponse();
         if (response.getStatus() == 500 && result.getResolvedException() != null) {
             throw new AssertionError("Unexpected money-operation failure.", result.getResolvedException());
@@ -1140,10 +1227,13 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                                 String manager) throws Exception {
         String response = mvc.perform(post("/api/v1/customers")
                                               .header("Authorization", "Bearer " + manager)
-                                              .header("Idempotency-Key", UUID.randomUUID().toString())
+                                              .header("Idempotency-Key", UUID.randomUUID()
+                                                                             .toString())
                                               .contentType(MediaType.APPLICATION_JSON)
                                               .content(customer(username, document)))
-                .andReturn().getResponse().getContentAsString();
+                             .andReturn()
+                             .getResponse()
+                             .getContentAsString();
         return Long.valueOf(response.replaceFirst(".*\\\"customerId\\\":(\\d+).*", "$1"));
     }
 
@@ -1152,10 +1242,13 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                                  String manager) throws Exception {
         String body = mvc.perform(post("/api/v1/customers/{id}/accounts", customerId)
                                           .header("Authorization", "Bearer " + manager)
-                                          .header("Idempotency-Key", UUID.randomUUID().toString())
+                                          .header("Idempotency-Key", UUID.randomUUID()
+                                                                         .toString())
                                           .contentType(MediaType.APPLICATION_JSON)
                                           .content("{\"currency\":\"" + currency + "\"}"))
-                .andReturn().getResponse().getContentAsString();
+                         .andReturn()
+                         .getResponse()
+                         .getContentAsString();
         return extract(body, "accountNumber");
     }
 
@@ -1167,7 +1260,7 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                             .header("If-Match", "account-v0")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"status\":\"" + status + "\"}"))
-                .andReturn();
+           .andReturn();
     }
 
     private String login(String username,
@@ -1176,7 +1269,9 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                                               .contentType(MediaType.APPLICATION_JSON)
                                               .content("{\"username\":\"" + username
                                                                + "\",\"password\":\"" + password + "\"}"))
-                .andReturn().getResponse().getContentAsString();
+                             .andReturn()
+                             .getResponse()
+                             .getContentAsString();
         return extract(response, "accessToken");
     }
 
@@ -1196,9 +1291,14 @@ class MoneyOperationIntegrationTest extends AbstractIntegrationTest {
                            String field) {
         var matcher = Pattern.compile("\\\"" + Pattern.quote(field)
                                               + "\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
-                .matcher(body);
-        if (!matcher.find()) throw new AssertionError("Missing field " + field + " in " + body);
+                             .matcher(body);
+        if (!matcher.find()) {
+            throw new AssertionError("Missing field " + field + " in " + body);
+        }
         return matcher.group(1);
+    }
+
+    private static final class TestRollbackException extends RuntimeException {
     }
 
     private record Response(int status, String body) {

@@ -37,8 +37,8 @@ public class MoneyQueryRepository {
         QAccountEntity account = QAccountEntity.accountEntity;
         return Optional.ofNullable(
                 queries.select(Projections.constructor(
-                                       AccountScope.class, account.id, account.customer.userId,
-                                       account.accountNumber))
+                               AccountScope.class, account.id, account.customer.userId,
+                               account.accountNumber))
                        .from(account)
                        .where(account.accountNumber.eq(accountNumber))
                        .fetchOne());
@@ -61,7 +61,9 @@ public class MoneyQueryRepository {
                                       .where(account.id.eq(accountId))
                                       .setLockMode(LockModeType.PESSIMISTIC_WRITE)
                                       .fetchOne();
-        if (locked != null) entityManager.refresh(locked);
+        if (locked != null) {
+            entityManager.refresh(locked);
+        }
         return Optional.ofNullable(locked);
     }
 
@@ -117,7 +119,9 @@ public class MoneyQueryRepository {
                               .set(account.updatedAt, now)
                               .where(account.id.eq(accountId))
                               .execute();
-        if (updated != 1) throw new IllegalStateException("Locked account could not be updated.");
+        if (updated != 1) {
+            throw new IllegalStateException("Locked account could not be updated.");
+        }
     }
 
     public void detach(Object entity) {

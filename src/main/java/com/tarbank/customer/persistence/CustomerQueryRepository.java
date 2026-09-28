@@ -22,8 +22,12 @@ public class CustomerQueryRepository {
                                          int size) {
         QCustomerEntity customer = QCustomerEntity.customerEntity;
         BooleanBuilder predicate = new BooleanBuilder();
-        if (status != null) predicate.and(customer.user.status.eq(status));
-        if (afterCustomerId != null) predicate.and(customer.userId.gt(afterCustomerId));
+        if (status != null) {
+            predicate.and(customer.user.status.eq(status));
+        }
+        if (afterCustomerId != null) {
+            predicate.and(customer.userId.gt(afterCustomerId));
+        }
         return queries.selectFrom(customer)
                       .join(customer.user)
                       .fetchJoin()

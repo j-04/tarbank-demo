@@ -24,11 +24,15 @@ public class SensitiveDocumentService {
     }
 
     public String normalize(String raw) {
-        if (raw == null) throw new IllegalArgumentException("Document number is required.");
+        if (raw == null) {
+            throw new IllegalArgumentException("Document number is required.");
+        }
         String normalized = Normalizer.normalize(raw, Normalizer.Form.NFKC)
                                       .replaceAll("[^\\p{Alnum}]", "")
                                       .toUpperCase(java.util.Locale.ROOT);
-        if (normalized.isBlank()) throw new IllegalArgumentException("Document number is required.");
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("Document number is required.");
+        }
         return normalized;
     }
 

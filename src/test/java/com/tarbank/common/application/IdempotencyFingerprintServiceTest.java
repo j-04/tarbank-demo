@@ -1,11 +1,11 @@
 package com.tarbank.common.application;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import com.tarbank.common.config.IdempotencyProperties;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 class IdempotencyFingerprintServiceTest {
     private final IdempotencyFingerprintService fingerprints = new IdempotencyFingerprintService(

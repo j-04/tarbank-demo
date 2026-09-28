@@ -94,7 +94,9 @@ public class UserEntity {
             this.lastName = lastName;
             changed = true;
         }
-        if (changed) updatedAt = now;
+        if (changed) {
+            updatedAt = now;
+        }
         return changed;
     }
 
@@ -102,7 +104,9 @@ public class UserEntity {
                              Instant now) {
         status = next;
         updatedAt = now;
-        if (next == UserStatus.DEACTIVATED) deactivatedAt = now;
+        if (next == UserStatus.DEACTIVATED) {
+            deactivatedAt = now;
+        }
     }
 
     public void resetPassword(String hash,

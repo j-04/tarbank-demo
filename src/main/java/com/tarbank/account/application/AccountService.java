@@ -19,6 +19,8 @@ import com.tarbank.common.http.CorrelationIdContext;
 import com.tarbank.common.persistence.AuditEventRepository;
 import com.tarbank.customer.domain.CustomerEntity;
 import com.tarbank.customer.persistence.CustomerRepository;
+import com.tarbank.money.application.EffectiveLimitService;
+import com.tarbank.money.domain.LimitOperationType;
 import com.tarbank.security.application.TarbankPrincipal;
 import com.tarbank.security.domain.ManagerEntity;
 import com.tarbank.security.domain.Role;
@@ -29,6 +31,7 @@ import com.tarbank.security.persistence.UserRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -60,7 +63,7 @@ public class AccountService {
 
     private final AccountNumberGenerator accountNumbers;
 
-    private final AccountProperties properties;
+    private final EffectiveLimitService effectiveLimits;
 
     private final JsonMapper json;
 
@@ -71,7 +74,7 @@ public class AccountService {
                           AuditEventRepository audits,
                           RequestIdempotencyService idempotency,
                           AccountNumberGenerator accountNumbers,
-                          AccountProperties properties,
+                          EffectiveLimitService effectiveLimits,
                           JsonMapper json) {
         this.accounts = accounts;
         this.customers = customers;
@@ -80,7 +83,7 @@ public class AccountService {
         this.audits = audits;
         this.idempotency = idempotency;
         this.accountNumbers = accountNumbers;
-        this.properties = properties;
+        this.effectiveLimits = effectiveLimits;
         this.json = json;
     }
 
@@ -104,7 +107,9 @@ public class AccountService {
                                                CreateAccountRequest request) {
         CustomerEntity customer = lockCustomer(customerId);
         if (customer.getUser()
-                    .getStatus() != UserStatus.ACTIVE) throw customerNotActive();
+                    .getStatus() != UserStatus.ACTIVE) {
+            throw customerNotActive();
+        }
         ManagerEntity manager = managers.findById(actor.getId())
                                         .orElseThrow(this::accessDenied);
         Instant now = Instant.now();
@@ -124,7 +129,9 @@ public class AccountService {
                                       String cursor,
                                       int limit) {
         validateLimit(limit);
-        if (!customers.existsById(customerId)) throw notFound();
+        if (!customers.existsById(customerId)) {
+            throw notFound();
+        }
         return page(customerId, cursor, limit);
     }
 
@@ -133,7 +140,9 @@ public class AccountService {
                                     String cursor,
                                     int limit) {
         validateLimit(limit);
-        if (principal.role() != Role.CUSTOMER) throw accessDenied();
+        if (principal.role() != Role.CUSTOMER) {
+            throw accessDenied();
+        }
         return page(principal.userId(), cursor, limit);
     }
 
@@ -153,16 +162,21 @@ public class AccountService {
         return new AccountPage(items, nextCursor);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public VersionedAccount find(String accountNumber,
                                  TarbankPrincipal principal) {
         AccountEntity account = accounts.findByAccountNumber(accountNumber)
                                         .orElseThrow(this::notFound);
         requireReadAccess(account, principal);
-        AccountProperties.DefaultLimits configured = properties.forCurrency(account.getCurrency());
+        var window = effectiveLimits.window(account.getCustomer()
+                                                   .getTimezone());
+        var withdrawal = effectiveLimits.effectiveLimit(
+                account, LimitOperationType.WITHDRAWAL, window);
+        var transfer = effectiveLimits.effectiveLimit(
+                account, LimitOperationType.TRANSFER, window);
         DailyLimits limits = new DailyLimits(
-                new LimitDetails(amount(configured.withdrawal()), null),
-                new LimitDetails(amount(configured.transfer()), null));
+                new LimitDetails(amount(withdrawal.amount()), withdrawal.expiresAt()),
+                new LimitDetails(amount(transfer.amount()), transfer.expiresAt()));
         AccountDetails details = new AccountDetails(
                 account.getAccountNumber(), account.getCurrency(), amount(account.getBalance()),
                 account.getStatus(), limits);
@@ -180,12 +194,16 @@ public class AccountService {
         AccountEntity account = accounts.lockByAccountNumber(accountNumber)
                                         .orElseThrow(this::notFound);
         if (!customerId.equals(account.getCustomer()
-                                      .getUserId())) throw notFound();
+                                      .getUserId())) {
+            throw notFound();
+        }
         requireVersion(account, expectedVersion);
 
         AccountStatus previous = account.getStatus();
         AccountStatus next = request.status();
-        if (!allowed(previous, next)) throw invalidTransition();
+        if (!allowed(previous, next)) {
+            throw invalidTransition();
+        }
         if (next == AccountStatus.ACTIVE && customer.getUser()
                                                     .getStatus() != UserStatus.ACTIVE) {
             throw invalidTransition();
@@ -214,7 +232,9 @@ public class AccountService {
 
     private void requireReadAccess(AccountEntity account,
                                    TarbankPrincipal principal) {
-        if (principal.role() == Role.MANAGER) return;
+        if (principal.role() == Role.MANAGER) {
+            return;
+        }
         if (principal.role() != Role.CUSTOMER
                 || !account.getCustomer()
                            .getUserId()
@@ -239,7 +259,9 @@ public class AccountService {
     }
 
     private ManagerEntity manager(TarbankPrincipal principal) {
-        if (principal.role() != Role.MANAGER) throw accessDenied();
+        if (principal.role() != Role.MANAGER) {
+            throw accessDenied();
+        }
         return managers.findById(principal.userId())
                        .orElseThrow(this::accessDenied);
     }
@@ -262,15 +284,21 @@ public class AccountService {
     }
 
     private void validateLimit(int limit) {
-        if (limit < 1 || limit > 100) throw validation();
+        if (limit < 1 || limit > 100) {
+            throw validation();
+        }
     }
 
     private Long decodeCursor(String cursor) {
-        if (cursor == null || cursor.isBlank()) return null;
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
         try {
             String decoded = new String(Base64.getUrlDecoder()
                                               .decode(cursor), StandardCharsets.UTF_8);
-            if (!decoded.matches("[1-9][0-9]*")) throw new IllegalArgumentException();
+            if (!decoded.matches("[1-9][0-9]*")) {
+                throw new IllegalArgumentException();
+            }
             return Long.valueOf(decoded);
         } catch (Exception exception) {
             throw validation();

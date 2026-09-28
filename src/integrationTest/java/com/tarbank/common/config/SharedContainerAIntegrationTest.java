@@ -13,6 +13,8 @@ class SharedContainerAIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void redisIsReachable() {
-        assertThat(redisTemplate.getConnectionFactory().getConnection().ping()).isEqualTo("PONG");
+        assertThat(redisTemplate.getConnectionFactory()
+                                .getConnection()
+                                .ping()).isEqualTo("PONG");
     }
 }

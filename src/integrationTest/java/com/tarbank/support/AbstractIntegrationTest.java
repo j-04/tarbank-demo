@@ -59,7 +59,10 @@ public abstract class AbstractIntegrationTest {
 
     @BeforeEach
     void clearRedis() {
-        redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
+        redisTemplate.getConnectionFactory()
+                     .getConnection()
+                     .serverCommands()
+                     .flushDb();
     }
 
     protected ConfigurableApplicationContext startApplication(Map<String, Object> overrides) {
@@ -78,9 +81,10 @@ public abstract class AbstractIntegrationTest {
         properties.put("spring.data.redis.password", REDIS_PASSWORD);
         properties.putAll(overrides);
 
-        String[] commandLineProperties = properties.entrySet().stream()
-                .map(entry -> "--" + entry.getKey() + "=" + entry.getValue())
-                .toArray(String[]::new);
+        String[] commandLineProperties = properties.entrySet()
+                                                   .stream()
+                                                   .map(entry -> "--" + entry.getKey() + "=" + entry.getValue())
+                                                   .toArray(String[]::new);
 
         return new SpringApplicationBuilder(TarbankApplication.class)
                 .web(WebApplicationType.NONE)

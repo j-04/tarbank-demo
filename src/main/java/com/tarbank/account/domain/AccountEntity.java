@@ -94,7 +94,13 @@ public class AccountEntity {
         statusChangedByManager = manager;
         statusChangedAt = now;
         updatedAt = now;
-        if (next == AccountStatus.DEACTIVATED) deactivatedAt = now;
+        if (next == AccountStatus.DEACTIVATED) {
+            deactivatedAt = now;
+        }
+    }
+
+    public void markLimitsChanged(Instant now) {
+        updatedAt = updatedAt.isBefore(now) ? now : updatedAt.plusNanos(1_000);
     }
 
     public Long getId() {

@@ -21,7 +21,9 @@ public record AccountProperties(@NotEmpty Map<Currency, @Valid DefaultLimits> de
 
     public DefaultLimits forCurrency(Currency currency) {
         DefaultLimits limits = defaultLimits.get(currency);
-        if (limits == null) throw new IllegalStateException("Default account limits are not configured.");
+        if (limits == null) {
+            throw new IllegalStateException("Default account limits are not configured.");
+        }
         return limits;
     }
 

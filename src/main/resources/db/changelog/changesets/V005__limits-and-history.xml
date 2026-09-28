@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <changeSet id="V005-limits-and-history" author="tarbank">
+        <createTable tableName="account_limit_overrides">
+            <column name="id" type="BIGSERIAL">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="account_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_limit_overrides_account"
+                             referencedTableName="accounts" referencedColumnNames="id"/>
+            </column>
+            <column name="operation_type" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="limit_amount" type="NUMERIC(19,4)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="effective_date" type="DATE">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expires_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_by_user_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_limit_overrides_user"
+                             referencedTableName="users" referencedColumnNames="id"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <sql>ALTER TABLE account_limit_overrides
+            ADD CONSTRAINT ck_limit_overrides_operation CHECK (operation_type IN ('WITHDRAWAL', 'TRANSFER'))</sql>
+        <sql>ALTER TABLE account_limit_overrides
+            ADD CONSTRAINT ck_limit_overrides_amount CHECK (limit_amount BETWEEN 1000.0000 AND 3000.0000)</sql>
+        <addUniqueConstraint tableName="account_limit_overrides"
+                             columnNames="account_id,operation_type,effective_date"
+                             constraintName="uk_limit_overrides_scope"/>
+        <createIndex tableName="account_limit_overrides" indexName="ix_limit_overrides_expires">
+            <column name="expires_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

@@ -57,8 +57,14 @@ class BootstrapSecurityConfiguration {
                                                 .hasRole("CUSTOMER")
                                                 .requestMatchers(HttpMethod.PATCH, "/api/v1/accounts/*/status")
                                                 .hasRole("MANAGER")
+                                                .requestMatchers(HttpMethod.PATCH,
+                                                                 "/api/v1/accounts/*/daily-limits")
+                                                .hasAnyRole("MANAGER", "CUSTOMER")
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/accounts")
                                                 .hasRole("CUSTOMER")
+                                                .requestMatchers(HttpMethod.GET,
+                                                                 "/api/v1/accounts/*/transactions")
+                                                .hasAnyRole("MANAGER", "CUSTOMER")
                                                 .requestMatchers(HttpMethod.GET, "/api/v1/accounts/*")
                                                 .hasAnyRole("MANAGER", "CUSTOMER")
                                                 .anyRequest()
