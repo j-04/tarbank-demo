@@ -485,11 +485,11 @@ This phase verifies the money-operation core against real PostgreSQL behavior. I
 
 ### Completion checklist
 
-- [ ] The concurrent tests are repeatable against PostgreSQL and have bounded execution time.
-- [ ] No test demonstrates a negative balance, limit overrun, duplicate usage row, duplicate transaction, or opposite-direction transfer deadlock.
-- [ ] Financial idempotency returns exactly one durable outcome for a matching request key.
-- [ ] Reconciliation proves every stored account balance matches its immutable entry history after successful, failed, and concurrent operations.
-- [ ] Transaction rollback leaves no partial money state.
+- [x] The concurrent tests are repeatable against PostgreSQL and have bounded execution time.
+- [x] No test demonstrates a negative balance, limit overrun, duplicate usage row, duplicate transaction, or opposite-direction transfer deadlock.
+- [x] Financial idempotency returns exactly one durable outcome for a matching request key.
+- [x] Reconciliation proves every stored account balance matches its immutable entry history after successful, failed, and concurrent operations.
+- [x] Transaction rollback leaves no partial money state.
 - [ ] Commit the completed checkpoint with a message such as verify money-operation concurrency.
 
 ## 8. Complete daily-limit configuration and account history
