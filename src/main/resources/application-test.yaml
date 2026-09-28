@@ -16,6 +16,8 @@ tarbank:
     key-version: v1
     encryption-key: test-only-document-encryption-key-must-not-be-used-outside-tests
     lookup-hmac-key: test-only-document-lookup-hmac-key-must-not-be-used-outside-tests
+  idempotency:
+    request-fingerprint-hmac-key: test-only-idempotency-fingerprint-key-must-not-be-used-outside-tests
   manager-seed:
     managers:
       - username: manager

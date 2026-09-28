@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -27,8 +29,10 @@ public class RequestIdempotencyService {
 
     private final EntityManager entityManager;
 
-    public RequestIdempotencyService(ApiRequestIdempotencyRepository records, IdempotencyProperties properties,
-                                     JsonMapper json, EntityManager entityManager) {
+    public RequestIdempotencyService(ApiRequestIdempotencyRepository records,
+                                     IdempotencyProperties properties,
+                                     JsonMapper json,
+                                     EntityManager entityManager) {
         this.records = records;
         this.properties = properties;
         this.json = json;
@@ -36,17 +40,39 @@ public class RequestIdempotencyService {
     }
 
     @Transactional
-    public <T> Result<T> execute(UserEntity actor, String operation, String scope, UUID key, String requestHash,
-                                 Class<T> type, int successStatus, Supplier<T> firstExecution) {
+    public <T> Result<T> execute(UserEntity actor,
+                                 String operation,
+                                 String scope,
+                                 UUID key,
+                                 String requestHash,
+                                 Class<T> type,
+                                 int successStatus,
+                                 Supplier<T> firstExecution) {
+        return execute(actor, operation, scope, key, requestHash, null, type, successStatus, firstExecution);
+    }
+
+    @Transactional
+    public <T> Result<T> execute(UserEntity actor,
+                                 String operation,
+                                 String scope,
+                                 UUID key,
+                                 String requestHash,
+                                 String legacyRequestHash,
+                                 Class<T> type,
+                                 int successStatus,
+                                 Supplier<T> firstExecution) {
         try {
             entityManager.createNativeQuery("set local lock_timeout = '" + properties.lockTimeout().toMillis() + "ms'")
                     .executeUpdate();
             Instant now = Instant.now();
             records.insertInProgress(actor.getId(), operation, scope, key, requestHash, now.plus(properties.retention()), now);
             var record = records.findForUpdate(actor.getId(), operation, scope, key).orElseThrow(this::inProgress);
-            if (!record.getRequestHash().equals(requestHash)) {
-                throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
-                                       "Idempotency key was reused with different input.", "TAR-IDEMPOTENCY-001");
+            if (!matches(record.getRequestHash(), requestHash)) {
+                if (legacyRequestHash == null || !matches(record.getRequestHash(), legacyRequestHash)) {
+                    throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
+                                           "Idempotency key was reused with different input.", "TAR-IDEMPOTENCY-001");
+                }
+                record.replaceRequestHash(requestHash, now);
             }
             if (record.getStatus() == IdempotencyStatus.COMPLETED) {
                 return new Result<>(json.readValue(record.getResponseBody(), type), record.getResponseStatus(), true);
@@ -61,6 +87,12 @@ public class RequestIdempotencyService {
         } catch (Exception exception) {
             throw new IllegalStateException("Idempotent request processing failed.", exception);
         }
+    }
+
+    private boolean matches(String stored,
+                            String supplied) {
+        return MessageDigest.isEqual(
+                stored.getBytes(StandardCharsets.US_ASCII), supplied.getBytes(StandardCharsets.US_ASCII));
     }
 
     private ApiException inProgress() {

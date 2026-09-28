@@ -30,8 +30,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final IdentityProfileValidator profiles;
 
-    public JwtAuthenticationFilter(JwtService jwt, UserRepository users, StringRedisTemplate redis,
-                                   ApiSecurityErrorWriter errors, IdentityProfileValidator profiles) {
+    public JwtAuthenticationFilter(JwtService jwt,
+                                   UserRepository users,
+                                   StringRedisTemplate redis,
+                                   ApiSecurityErrorWriter errors,
+                                   IdentityProfileValidator profiles) {
         this.jwt = jwt;
         this.users = users;
         this.redis = redis;
@@ -40,7 +43,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain chain)
             throws ServletException, IOException {
         String header = request.getHeader("Authorization");
         if (header == null || header.isBlank()) {

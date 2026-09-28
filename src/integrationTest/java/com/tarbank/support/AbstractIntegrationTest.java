@@ -1,8 +1,6 @@
 package com.tarbank.support;
 
 import com.tarbank.TarbankApplication;
-import java.util.HashMap;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.WebApplicationType;
@@ -18,25 +16,31 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public abstract class AbstractIntegrationTest {
 
     private static final String DATABASE_NAME = "tarbank_test";
+
     private static final String DATABASE_USERNAME = "tarbank_test";
+
     private static final String DATABASE_PASSWORD = "tarbank-test-database-password";
-    private static final String REDIS_PASSWORD = "tarbank-test-redis-password";
 
     @Container
     protected static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
-                    DockerImageName.parse("postgres:17.5-alpine"))
+            DockerImageName.parse("postgres:17.5-alpine"))
             .withDatabaseName(DATABASE_NAME)
             .withUsername(DATABASE_USERNAME)
             .withPassword(DATABASE_PASSWORD);
 
+    private static final String REDIS_PASSWORD = "tarbank-test-redis-password";
+
     @Container
     protected static final GenericContainer<?> REDIS = new GenericContainer<>(
-                    DockerImageName.parse("redis:7.4.2-alpine"))
+            DockerImageName.parse("redis:7.4.2-alpine"))
             .withCommand("redis-server", "--requirepass", REDIS_PASSWORD)
             .withExposedPorts(6379);
 

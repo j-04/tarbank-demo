@@ -197,79 +197,79 @@ This phase completes the manager-controlled lifecycle after onboarding: safe pro
 
 ### 4.1 Add the account persistence dependency for lifecycle cascades
 
-- [ ] Add the accounts Liquibase changeset with the account owner, currency, balance, lifecycle status, status-change metadata, management version, and timestamps defined in the design.
-- [ ] Add the Account entity and repository methods needed to load a customer's non-deactivated accounts for a status change.
-- [ ] Add a repository method that locks the affected account rows before their statuses are changed.
-- [ ] Define one shared lifecycle locking protocol: lock the customer row first, then lock affected account rows in ascending internal account-ID order.
-- [ ] Require account creation and account unblocking in phase 5 to use that same customer-first protocol before they verify that a customer is ACTIVE.
-- [ ] Do not expose account creation, account detail, daily-limit, or account-status endpoints in this phase. Those remain phase 5.
-- [ ] Update phase 5 to build its public account lifecycle on this persistence baseline rather than creating a second account schema.
+- [x] Add the accounts Liquibase changeset with the account owner, currency, balance, lifecycle status, status-change metadata, management version, and timestamps defined in the design.
+- [x] Add the Account entity and repository methods needed to load a customer's non-deactivated accounts for a status change.
+- [x] Add a repository method that locks the affected account rows before their statuses are changed.
+- [x] Define one shared lifecycle locking protocol: lock the customer row first, then lock affected account rows in ascending internal account-ID order.
+- [x] Require account creation and account unblocking in phase 5 to use that same customer-first protocol before they verify that a customer is ACTIVE.
+- [x] Do not expose account creation, account detail, daily-limit, or account-status endpoints in this phase. Those remain phase 5.
+- [x] Update phase 5 to build its public account lifecycle on this persistence baseline rather than creating a second account schema.
 
 ### 4.2 Implement manager customer listing and safe reads
 
-- [ ] Add the compatible QueryDSL JPA dependency, annotation processing, and generated-source build configuration.
-- [ ] Add manager-only GET /api/v1/customers with bounded cursor pagination and an optional lifecycle-status filter, implemented with QueryDSL predicates for the optional filter and keyset cursor.
-- [ ] Verify from a clean checkout that annotation processing generates and compiles the Q-types used by customer listing.
-- [ ] Extend GET /api/v1/customers/{customerId} to return the current customer ETag in the customer-vN form.
-- [ ] Keep customer lists and detail responses limited to safe fields; never disclose document numbers, lookup hashes, ciphertext, passwords, or password hashes.
-- [ ] Keep manager authorization global as specified in the design: every ACTIVE manager may access every customer, without a portfolio restriction.
-- [ ] Return the documented validation, authentication, authorization, and not-found error contracts.
+- [x] Add the compatible QueryDSL JPA dependency, annotation processing, and generated-source build configuration.
+- [x] Add manager-only GET /api/v1/customers with bounded cursor pagination and an optional lifecycle-status filter, implemented with QueryDSL predicates for the optional filter and keyset cursor.
+- [x] Verify from a clean checkout that annotation processing generates and compiles the Q-types used by customer listing.
+- [x] Extend GET /api/v1/customers/{customerId} to return the current customer ETag in the customer-vN form.
+- [x] Keep customer lists and detail responses limited to safe fields; never disclose document numbers, lookup hashes, ciphertext, passwords, or password hashes.
+- [x] Keep manager authorization global as specified in the design: every ACTIVE manager may access every customer, without a portfolio restriction.
+- [x] Return the documented validation, authentication, authorization, and not-found error contracts.
 
 ### 4.3 Implement mutable profile updates
 
-- [ ] Define the PATCH /api/v1/customers/{customerId} request DTO for the documented mutable profile fields: names, email, phone number, and current residential address.
-- [ ] Reject changes to username, date of birth, timezone, identity-document data, manager relationship, role, and lifecycle status through this endpoint.
-- [ ] Require an If-Match customer-vN header. Reject an absent header with 428 PRECONDITION_REQUIRED and a stale header with 412 PRECONDITION_FAILED.
-- [ ] Load and update the customer in one transaction, increment the customer version exactly once, and return the next ETag.
-- [ ] Reapply contact, address, and format validation to partial updates. Keep the field-error response safe and specific enough for a caller to correct input.
-- [ ] Write a CUSTOMER_UPDATED audit event with the manager, customer, correlation ID, and safe change metadata. Do not store sensitive old or new values in audit metadata.
+- [x] Define the PATCH /api/v1/customers/{customerId} request DTO for the documented mutable profile fields: names, email, phone number, and current residential address.
+- [x] Reject changes to username, date of birth, timezone, identity-document data, manager relationship, role, and lifecycle status through this endpoint.
+- [x] Require an If-Match customer-vN header. Reject an absent header with 428 PRECONDITION_REQUIRED and a stale header with 412 PRECONDITION_FAILED.
+- [x] Load and update the customer in one transaction, increment the customer version exactly once, and return the next ETag.
+- [x] Reapply contact, address, and format validation to partial updates. Keep the field-error response safe and specific enough for a caller to correct input.
+- [x] Write a CUSTOMER_UPDATED audit event with the manager, customer, correlation ID, and safe change metadata. Do not store sensitive old or new values in audit metadata.
 
 ### 4.4 Implement customer status transitions and account cascades
 
-- [ ] Define the PATCH /api/v1/customers/{customerId}/status DTO and allow only ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED.
-- [ ] Reject every other transition, including any reactivation of a DEACTIVATED customer, with 409 INVALID_STATUS_TRANSITION.
-- [ ] Require If-Match customer-vN and apply the transition in one transaction.
-- [ ] For a block operation, lock and block every non-deactivated account owned by the customer.
-- [ ] For an unblock operation, restore only the customer to ACTIVE. Do not automatically unblock any account.
-- [ ] For deactivation, lock and permanently deactivate every non-deactivated account. Never permit reversal.
-- [ ] Increment the customer version and every changed account management version. Record the acting manager and timestamp on each changed customer and account.
-- [ ] Write one CUSTOMER_STATUS_CHANGED audit event and one ACCOUNT_STATUS_CHANGED audit event for each affected account, with old and new statuses and the same correlation ID.
-- [ ] Lock the customer row first and then affected account rows in ascending internal account-ID order, matching the shared protocol used by account creation and unblocking.
+- [x] Define the PATCH /api/v1/customers/{customerId}/status DTO and allow only ACTIVE to BLOCKED, BLOCKED to ACTIVE, and ACTIVE or BLOCKED to DEACTIVATED.
+- [x] Reject every other transition, including any reactivation of a DEACTIVATED customer, with 409 INVALID_STATUS_TRANSITION.
+- [x] Require If-Match customer-vN and apply the transition in one transaction.
+- [x] For a block operation, lock and block every non-deactivated account owned by the customer.
+- [x] For an unblock operation, restore only the customer to ACTIVE. Do not automatically unblock any account.
+- [x] For deactivation, lock and permanently deactivate every non-deactivated account. Never permit reversal.
+- [x] Increment the customer version and every changed account management version. Record the acting manager and timestamp on each changed customer and account.
+- [x] Write one CUSTOMER_STATUS_CHANGED audit event and one ACCOUNT_STATUS_CHANGED audit event for each affected account, with old and new statuses and the same correlation ID.
+- [x] Lock the customer row first and then affected account rows in ascending internal account-ID order, matching the shared protocol used by account creation and unblocking.
 
 ### 4.5 Implement the manager-assisted password-reset flow
 
-- [ ] Define POST /api/v1/customers/{customerId}/password-reset as a manager-authorized operation used by the assumed secure branch terminal; it is not a customer self-service or unauthenticated route.
-- [ ] Require Authorization: Bearer JWT, Content-Type: application/json, and Idempotency-Key: UUID v4. Accept only a newPassword field and return a safe PASSWORD_RESET status response.
-- [ ] Validate the replacement password using the same exactly-12-printable-character rule and username comparison used during onboarding.
-- [ ] In one transaction, reserve generic idempotency, lock the corresponding user row, BCrypt-hash the replacement password, write the hash and incremented credential version together, write a CUSTOMER_PASSWORD_RESET audit event, and finalize the replay response.
-- [ ] Include the credential version in every JWT and reject a token whose claim no longer matches the user's current version with 401 UNAUTHENTICATED. A completed reset therefore invalidates all previously issued customer tokens immediately.
-- [ ] Ensure neither the replacement password nor hash reaches a response, log, audit metadata, or exception.
-- [ ] Keep the physical branch terminal outside this project. It is an assumed authenticated manager client of this operation, not a separate application to implement.
+- [x] Define POST /api/v1/customers/{customerId}/password-reset as a manager-authorized operation used by the assumed secure branch terminal; it is not a customer self-service or unauthenticated route.
+- [x] Require Authorization: Bearer JWT, Content-Type: application/json, and Idempotency-Key: UUID v4. Accept only a newPassword field and return a safe PASSWORD_RESET status response.
+- [x] Validate the replacement password using the same exactly-12-printable-character rule and username comparison used during onboarding.
+- [x] In one transaction, reserve generic idempotency, lock the corresponding user row, BCrypt-hash the replacement password, write the hash and incremented credential version together, write a CUSTOMER_PASSWORD_RESET audit event, and finalize the replay response.
+- [x] Include the credential version in every JWT and reject a token whose claim no longer matches the user's current version with 401 UNAUTHENTICATED. A completed reset therefore invalidates all previously issued customer tokens immediately.
+- [x] Ensure neither the replacement password nor hash reaches a response, log, audit metadata, or exception.
+- [x] Keep the physical branch terminal outside this project. It is an assumed authenticated manager client of this operation, not a separate application to implement.
 
 ### 4.6 Enforce lifecycle status in active sessions
 
-- [ ] Reuse the phase-3 per-request user-status lookup so a token issued before a customer is blocked or deactivated is rejected on its next protected request.
-- [ ] Do not attempt to cancel a request that was already authenticated and began its database transaction before the status change; it follows the established request-entry authentication policy.
-- [ ] Do not add a separate token-version scheme or bulk Redis invalidation for lifecycle changes; the current status check is the chosen enforcement mechanism. The credential version is reserved for password-reset invalidation.
+- [x] Reuse the phase-3 per-request user-status lookup so a token issued before a customer is blocked or deactivated is rejected on its next protected request.
+- [x] Do not attempt to cancel a request that was already authenticated and began its database transaction before the status change; it follows the established request-entry authentication policy.
+- [x] Do not add a separate token-version scheme or bulk Redis invalidation for lifecycle changes; the current status check is the chosen enforcement mechanism. The credential version is reserved for password-reset invalidation.
 
 ### 4.7 Test customer lifecycle behavior
 
-- [ ] Test customer listing, cursor and status-filter validation, safe read responses, and manager-only access.
-- [ ] Test successful profile updates, immutable-field rejection, missing ETag, stale ETag, and concurrent updates.
-- [ ] Test every allowed and forbidden customer-status transition.
-- [ ] Create accounts through repository fixtures and verify blocking and deactivation cascade atomically, while unblocking leaves account statuses unchanged.
-- [ ] Test that an already-issued customer token is denied on its next protected request after blocking or deactivation.
-- [ ] Test the manager-assisted password reset flow, including validation, BCrypt storage, authorization, idempotency, audit logging, and immediate rejection of previously issued customer tokens. Race two different idempotency keys with different passwords, assert that the credential version increases twice and a token issued after the first reset is rejected after the second, and assert that a same-key replay neither changes the hash nor increments the version again.
-- [ ] Test that customer, account, and audit changes roll back together if the transaction fails.
+- [x] Test customer listing, cursor and status-filter validation, safe read responses, and manager-only access.
+- [x] Test successful profile updates, immutable-field rejection, missing ETag, stale ETag, and concurrent updates.
+- [x] Test every allowed and forbidden customer-status transition.
+- [x] Create accounts through repository fixtures and verify blocking and deactivation cascade atomically, while unblocking leaves account statuses unchanged.
+- [x] Test that an already-issued customer token is denied on its next protected request after blocking or deactivation.
+- [x] Test the manager-assisted password reset flow, including validation, BCrypt storage, authorization, idempotency, audit logging, and immediate rejection of previously issued customer tokens. Race two different idempotency keys with different passwords, assert that the credential version increases twice and a token issued after the first reset is rejected after the second, and assert that a same-key replay neither changes the hash nor increments the version again.
+- [x] Test that customer, account, and audit changes roll back together if the transaction fails.
 
 ### Completion checklist
 
-- [ ] Managers can list, retrieve, and safely update customers using the documented ETag contract.
-- [ ] Customer status transitions are authorized, optimistic-concurrency-safe, audited, and follow the allowed state machine.
-- [ ] Blocking and deactivation cascade to eligible accounts; unblocking does not restore accounts automatically.
-- [ ] A blocked or deactivated customer cannot use a previously issued token on a new protected request.
-- [ ] Password resets are manager-assisted, securely stored, and not public or self-service.
-- [ ] Commit the completed checkpoint with a message such as implement customer lifecycle management.
+- [x] Managers can list, retrieve, and safely update customers using the documented ETag contract.
+- [x] Customer status transitions are authorized, optimistic-concurrency-safe, audited, and follow the allowed state machine.
+- [x] Blocking and deactivation cascade to eligible accounts; unblocking does not restore accounts automatically.
+- [x] A blocked or deactivated customer cannot use a previously issued token on a new protected request.
+- [x] Password resets are manager-assisted, securely stored, and not public or self-service.
+- [x] Commit the completed checkpoint with a message such as implement customer lifecycle management.
 
 ## 5. Implement account lifecycle management
 

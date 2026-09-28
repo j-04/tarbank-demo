@@ -79,7 +79,15 @@ public class ApiRequestIdempotencyEntity {
         return responseBody;
     }
 
-    public void complete(int responseStatus, String responseBody, Instant now) {
+    public void replaceRequestHash(String requestHash,
+                                   Instant now) {
+        this.requestHash = requestHash;
+        this.updatedAt = now;
+    }
+
+    public void complete(int responseStatus,
+                         String responseBody,
+                         Instant now) {
         this.status = IdempotencyStatus.COMPLETED;
         this.responseStatus = responseStatus;
         this.responseBody = responseBody;

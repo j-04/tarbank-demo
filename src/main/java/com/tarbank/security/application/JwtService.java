@@ -21,12 +21,15 @@ public class JwtService {
 
     private final JsonMapper jsonMapper;
 
-    public JwtService(JwtProperties properties, JsonMapper jsonMapper) {
+    public JwtService(JwtProperties properties,
+                      JsonMapper jsonMapper) {
         this.properties = properties;
         this.jsonMapper = jsonMapper;
     }
 
-    public IssuedToken issue(Long userId, Role role, int credentialVersion) {
+    public IssuedToken issue(Long userId,
+                             Role role,
+                             int credentialVersion) {
         Instant expires = Instant.now().plus(properties.accessTokenTtl());
         UUID jti = UUID.randomUUID();
         Map<String, Object> claims = new LinkedHashMap<>();
@@ -85,7 +88,8 @@ public class JwtService {
         return new String(Base64.getUrlDecoder().decode(value), StandardCharsets.UTF_8);
     }
 
-    private boolean constantTime(String a, String b) {
+    private boolean constantTime(String a,
+                                 String b) {
         return MessageDigest.isEqual(a.getBytes(StandardCharsets.US_ASCII), b.getBytes(StandardCharsets.US_ASCII));
     }
 

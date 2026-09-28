@@ -12,6 +12,9 @@ spring:
       host: ${tarbank.redis.host}
       port: ${tarbank.redis.port}
       password: ${tarbank.redis.password}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   jpa:
     hibernate:
       ddl-auto: validate
@@ -56,6 +59,7 @@ tarbank:
   idempotency:
     retention: PT24H
     lock-timeout: PT5S
+    request-fingerprint-hmac-key: ${TARBANK_IDEMPOTENCY_FINGERPRINT_HMAC_KEY:}
   manager-seed:
     managers:
       - username: ${TARBANK_MANAGER_USERNAME}

@@ -3,4 +3,5 @@
                    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
     <include file="db/changelog/changesets/V001__identity-and-onboarding.xml"/>
+    <include file="db/changelog/changesets/V002__customer-lifecycle-account-baseline.xml"/>
 </databaseChangeLog>

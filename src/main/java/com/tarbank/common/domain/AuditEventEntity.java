@@ -48,7 +48,13 @@ public class AuditEventEntity {
     protected AuditEventEntity() {
     }
 
-    public AuditEventEntity(UserEntity actor, String action, String targetType, String targetId, UUID correlationId, String metadata, Instant createdAt) {
+    public AuditEventEntity(UserEntity actor,
+                            String action,
+                            String targetType,
+                            String targetId,
+                            UUID correlationId,
+                            String metadata,
+                            Instant createdAt) {
         this.actor = actor;
         this.action = action;
         this.targetType = targetType;

@@ -11,7 +11,8 @@ public class IdentityProfileValidator {
 
     private final CustomerRepository customers;
 
-    public IdentityProfileValidator(ManagerRepository managers, CustomerRepository customers) {
+    public IdentityProfileValidator(ManagerRepository managers,
+                                    CustomerRepository customers) {
         this.managers = managers;
         this.customers = customers;
     }

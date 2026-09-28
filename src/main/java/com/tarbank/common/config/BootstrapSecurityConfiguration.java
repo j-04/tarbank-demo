@@ -20,13 +20,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 class BootstrapSecurityConfiguration {
     @Bean
     @Order(1)
-    SecurityFilterChain management(HttpSecurity http, @Value("${management.server.port:8081}") int port) throws Exception {
+    SecurityFilterChain management(HttpSecurity http,
+                                   @Value("${management.server.port:8081}") int port) throws Exception {
         return http.securityMatcher(r -> r.getLocalPort() == port).csrf(AbstractHttpConfigurer::disable).sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS)).authorizeHttpRequests(a -> a.requestMatchers("/actuator/health/**").permitAll().anyRequest().denyAll()).build();
     }
 
     @Bean
     @Order(2)
-    SecurityFilterChain application(HttpSecurity http, ApiSecurityErrorWriter errors, JwtAuthenticationFilter jwt) throws Exception {
+    SecurityFilterChain application(HttpSecurity http,
+                                    ApiSecurityErrorWriter errors,
+                                    JwtAuthenticationFilter jwt) throws Exception {
         return http.csrf(AbstractHttpConfigurer::disable).sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS)).exceptionHandling(e -> e.authenticationEntryPoint((q, p, x) -> errors.write(p, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication is required.")).accessDeniedHandler((q, p, x) -> errors.write(p, HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied."))).addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class).authorizeHttpRequests(a -> a.requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll().requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll().requestMatchers("/api/v1/auth/logout").authenticated().requestMatchers("/api/v1/customers/**").hasRole("MANAGER").anyRequest().denyAll()).build();
     }
 }

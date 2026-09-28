@@ -7,7 +7,8 @@ public final class ApiErrorResponses {
     private ApiErrorResponses() {
     }
 
-    public static ApiErrorResponse validation(UUID id, List<ApiErrorResponse.FieldError> fields) {
+    public static ApiErrorResponse validation(UUID id,
+                                              List<ApiErrorResponse.FieldError> fields) {
         return error(id, "VALIDATION_ERROR", "The request is invalid.", fields);
     }
 
@@ -15,11 +16,16 @@ public final class ApiErrorResponses {
         return error(id, "INTERNAL_ERROR", "An unexpected error occurred.", List.of());
     }
 
-    public static ApiErrorResponse error(UUID id, String code, String message) {
+    public static ApiErrorResponse error(UUID id,
+                                         String code,
+                                         String message) {
         return error(id, code, message, List.of());
     }
 
-    private static ApiErrorResponse error(UUID id, String code, String message, List<ApiErrorResponse.FieldError> fields) {
+    public static ApiErrorResponse error(UUID id,
+                                         String code,
+                                         String message,
+                                         List<ApiErrorResponse.FieldError> fields) {
         return new ApiErrorResponse(new ApiErrorResponse.ErrorDetails(code, message, fields), id);
     }
 }

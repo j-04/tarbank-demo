@@ -59,9 +59,15 @@ public class CustomerService {
 
     private final Clock clock = Clock.systemUTC();
 
-    public CustomerService(UserRepository users, ManagerRepository managers, CustomerRepository customers,
-                           PasswordEncoder passwords, PasswordPolicy passwordPolicy, SensitiveDocumentService documents,
-                           RequestIdempotencyService idempotency, AuditEventRepository audits, JsonMapper json) {
+    public CustomerService(UserRepository users,
+                           ManagerRepository managers,
+                           CustomerRepository customers,
+                           PasswordEncoder passwords,
+                           PasswordPolicy passwordPolicy,
+                           SensitiveDocumentService documents,
+                           RequestIdempotencyService idempotency,
+                           AuditEventRepository audits,
+                           JsonMapper json) {
         this.users = users;
         this.managers = managers;
         this.customers = customers;
@@ -74,7 +80,9 @@ public class CustomerService {
     }
 
     public RequestIdempotencyService.Result<CustomerSummary> create(
-            TarbankPrincipal principal, UUID key, CreateCustomerRequest request) {
+            TarbankPrincipal principal,
+            UUID key,
+            CreateCustomerRequest request) {
         UserEntity actor = users.findById(principal.userId()).orElseThrow(this::notFound);
         String username = lower(request.username());
         String documentNumber = documents.normalize(request.identityDocument().number());
@@ -101,8 +109,11 @@ public class CustomerService {
         }
     }
 
-    private CustomerSummary createFirst(UserEntity actor, String username, String documentNumber,
-                                        String documentHash, CreateCustomerRequest request) {
+    private CustomerSummary createFirst(UserEntity actor,
+                                        String username,
+                                        String documentNumber,
+                                        String documentHash,
+                                        CreateCustomerRequest request) {
         if (users.findByUsername(username).isPresent()) {
             throw conflict("USERNAME_ALREADY_EXISTS", "Username is already in use.", "TAR-CUSTOMER-002");
         }
@@ -131,14 +142,15 @@ public class CustomerService {
     public CustomerDetails find(Long id) {
         CustomerEntity customer = customers.findById(id).orElseThrow(this::notFound);
         return new CustomerDetails(customer.getUserId(), customer.getUser().getUsername(), customer.getUser().getStatus(),
-                                   customer.getUser().getFirstName(), customer.getUser().getLastName(), customer.getDateOfBirth(),
+                                   customer.getUser().getFirstName(), customer.getUser().getMiddleName(), customer.getUser().getLastName(), customer.getDateOfBirth(),
                                    customer.getEmail(), customer.getPhoneNumber(), new ResidentialAddress(customer.getResidenceCountry(),
                                                                                                           customer.getResidenceCity(), customer.getResidencePostalCode(), customer.getResidenceAddressLine1(),
                                                                                                           customer.getResidenceAddressLine2()), new SafeIdentityDocument(customer.getDocumentType(),
                                                                                                                                                                          customer.getDocumentIssuingCountry(), customer.getDocumentExpiresOn()), customer.getTimezone());
     }
 
-    private void validateReplayStable(CreateCustomerRequest request, String username) {
+    private void validateReplayStable(CreateCustomerRequest request,
+                                      String username) {
         if (!username.matches("^[a-z][a-z0-9._-]{2,31}$")) throw invalid();
         if (!passwordPolicy.isValid(request.password(), username)) throw invalid();
         if (!request.phoneNumber().trim().matches("^\\+[1-9]\\d{1,14}$")) throw invalid();
@@ -182,7 +194,9 @@ public class CustomerService {
         return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "The request is invalid.", "TAR-API-001");
     }
 
-    private ApiException conflict(String code, String message, String internal) {
+    private ApiException conflict(String code,
+                                  String message,
+                                  String internal) {
         return new ApiException(HttpStatus.CONFLICT, code, message, internal);
     }
 

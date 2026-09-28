@@ -6,7 +6,8 @@ import java.util.Locale;
 
 @Component
 public class PasswordPolicy {
-    public boolean isValid(String password, String username) {
+    public boolean isValid(String password,
+                           String username) {
         return password != null
                 && password.matches("^[\\x20-\\x7E]{12}$")
                 && username != null

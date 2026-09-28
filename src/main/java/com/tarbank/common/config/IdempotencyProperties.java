@@ -8,5 +8,8 @@ import java.time.Duration;
 
 @Validated
 @ConfigurationProperties("tarbank.idempotency")
-public record IdempotencyProperties(@NotNull Duration retention, @NotNull Duration lockTimeout) {
+public record IdempotencyProperties(
+        @NotNull Duration retention,
+        @NotNull Duration lockTimeout,
+        String requestFingerprintHmacKey) {
 }

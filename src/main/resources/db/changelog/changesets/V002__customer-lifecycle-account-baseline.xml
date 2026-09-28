@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+    <changeSet id="V002-customer-lifecycle-account-baseline" author="tarbank">
+        <createTable tableName="accounts">
+            <column name="id" type="BIGSERIAL">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="account_number" type="VARCHAR(16)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="uk_accounts_number"/>
+            </column>
+            <column name="customer_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_accounts_customer" referencedTableName="customers"
+                             referencedColumnNames="user_id"/>
+            </column>
+            <column name="currency" type="CHAR(3)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="balance" type="NUMERIC(19,4)" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status_changed_by_manager_id" type="BIGINT">
+                <constraints foreignKeyName="fk_accounts_status_manager" referencedTableName="managers"
+                             referencedColumnNames="user_id"/>
+            </column>
+            <column name="status_changed_at" type="TIMESTAMPTZ"/>
+            <column name="management_version" type="INT" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by_manager_id" type="BIGINT">
+                <constraints nullable="false" foreignKeyName="fk_accounts_created_manager"
+                             referencedTableName="managers" referencedColumnNames="user_id"/>
+            </column>
+            <column name="created_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMPTZ">
+                <constraints nullable="false"/>
+            </column>
+            <column name="deactivated_at" type="TIMESTAMPTZ"/>
+        </createTable>
+        <sql>ALTER TABLE accounts ADD CONSTRAINT ck_accounts_currency CHECK (currency IN ('EUR', 'USD'))</sql>
+        <sql>ALTER TABLE accounts ADD CONSTRAINT ck_accounts_balance CHECK (balance &gt;= 0)</sql>
+        <sql>ALTER TABLE accounts ADD CONSTRAINT ck_accounts_status CHECK (status IN ('ACTIVE', 'BLOCKED',
+            'DEACTIVATED'))
+        </sql>
+        <createIndex tableName="accounts" indexName="ix_accounts_customer_status_id">
+            <column name="customer_id"/>
+            <column name="status"/>
+            <column name="id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

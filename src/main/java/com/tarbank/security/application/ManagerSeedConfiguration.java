@@ -8,7 +8,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 class ManagerSeedConfiguration {
     @Bean
-    ApplicationRunner seedManagers(ManagerSeedProperties properties, ManagerSeeder seeder) {
+    ApplicationRunner seedManagers(ManagerSeedProperties properties,
+                                   ManagerSeeder seeder) {
         return args -> seeder.seed(properties);
     }
 }

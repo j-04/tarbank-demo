@@ -2,6 +2,7 @@ package com.tarbank.customer.domain;
 
 import com.tarbank.security.domain.ManagerEntity;
 import com.tarbank.security.domain.UserEntity;
+import com.tarbank.security.domain.UserStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -16,6 +17,7 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Objects;
 
 @Entity
 @Table(name = "customers")
@@ -92,7 +94,22 @@ public class CustomerEntity {
     protected CustomerEntity() {
     }
 
-    public CustomerEntity(UserEntity user, LocalDate dateOfBirth, String email, String phoneNumber, String residenceCountry, String residenceCity, String residencePostalCode, String line1, String line2, String documentType, String documentIssuingCountry, byte[] encryptedNumber, String documentHash, LocalDate documentExpiresOn, String timezone, ManagerEntity manager) {
+    public CustomerEntity(UserEntity user,
+                          LocalDate dateOfBirth,
+                          String email,
+                          String phoneNumber,
+                          String residenceCountry,
+                          String residenceCity,
+                          String residencePostalCode,
+                          String line1,
+                          String line2,
+                          String documentType,
+                          String documentIssuingCountry,
+                          byte[] encryptedNumber,
+                          String documentHash,
+                          LocalDate documentExpiresOn,
+                          String timezone,
+                          ManagerEntity manager) {
         this.user = user;
         this.dateOfBirth = dateOfBirth;
         this.email = email;
@@ -109,6 +126,44 @@ public class CustomerEntity {
         this.documentExpiresOn = documentExpiresOn;
         this.timezone = timezone;
         this.manager = manager;
+    }
+
+    public boolean updateContact(String email,
+                                 boolean emailSupplied,
+                                 String phoneNumber,
+                                 String country,
+                                 String city,
+                                 String postalCode,
+                                 String line1,
+                                 String line2) {
+        boolean changed = false;
+        if (emailSupplied && !Objects.equals(this.email, email)) {
+            this.email = email;
+            changed = true;
+        }
+        if (phoneNumber != null && !Objects.equals(this.phoneNumber, phoneNumber)) {
+            this.phoneNumber = phoneNumber;
+            changed = true;
+        }
+        if (country != null) {
+            changed |= !Objects.equals(residenceCountry, country) || !Objects.equals(residenceCity, city)
+                    || !Objects.equals(residencePostalCode, postalCode) || !Objects.equals(residenceAddressLine1, line1)
+                    || !Objects.equals(residenceAddressLine2, line2);
+            residenceCountry = country;
+            residenceCity = city;
+            residencePostalCode = postalCode;
+            residenceAddressLine1 = line1;
+            residenceAddressLine2 = line2;
+        }
+        return changed;
+    }
+
+    public void changeStatus(UserStatus status,
+                             ManagerEntity manager,
+                             Instant now) {
+        user.changeStatus(status, now);
+        statusChangedByManager = manager;
+        statusChangedAt = now;
     }
 
     public Long getUserId() {
@@ -165,5 +220,9 @@ public class CustomerEntity {
 
     public String getTimezone() {
         return timezone;
+    }
+
+    public int getVersion() {
+        return version;
     }
 }

@@ -23,7 +23,9 @@ public class ManagerSeeder {
 
     private final PasswordPolicy passwordPolicy;
 
-    public ManagerSeeder(UserRepository users, ManagerRepository managers, PasswordEncoder encoder,
+    public ManagerSeeder(UserRepository users,
+                         ManagerRepository managers,
+                         PasswordEncoder encoder,
                          PasswordPolicy passwordPolicy) {
         this.users = users;
         this.managers = managers;

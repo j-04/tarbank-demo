@@ -20,7 +20,10 @@ public class ApiSecurityErrorWriter {
         this.jsonMapper = jsonMapper;
     }
 
-    public void write(HttpServletResponse response, HttpStatus status, String code, String message) throws IOException {
+    public void write(HttpServletResponse response,
+                      HttpStatus status,
+                      String code,
+                      String message) throws IOException {
         UUID correlationId = CorrelationIdContext.current();
         if (correlationId != null) {
             response.setHeader(CorrelationIdFilter.HEADER_NAME, correlationId.toString());

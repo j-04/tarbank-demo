@@ -14,6 +14,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +27,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler({
             HttpMessageNotReadableException.class,
             MethodArgumentNotValidException.class,
+            MethodArgumentTypeMismatchException.class,
             MissingRequestHeaderException.class,
             IllegalArgumentException.class
     })
@@ -45,7 +47,8 @@ public class ApiExceptionHandler {
         LOGGER.warn("internalCode={} publicErrorCode={} httpStatus={} correlationId={}",
                     exception.getInternalCode(), exception.getCode(), exception.getStatus().value(), correlationId());
         return ResponseEntity.status(exception.getStatus())
-                .body(ApiErrorResponses.error(correlationId(), exception.getCode(), exception.getSafeMessage()));
+                .body(ApiErrorResponses.error(correlationId(), exception.getCode(), exception.getSafeMessage(),
+                                              exception.getFieldErrors()));
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)

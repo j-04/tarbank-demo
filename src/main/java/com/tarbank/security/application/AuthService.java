@@ -20,7 +20,11 @@ public class AuthService {
 
     private final IdentityProfileValidator profiles;
 
-    public AuthService(UserRepository users, PasswordEncoder passwords, JwtService jwt, StringRedisTemplate redis, IdentityProfileValidator profiles) {
+    public AuthService(UserRepository users,
+                       PasswordEncoder passwords,
+                       JwtService jwt,
+                       StringRedisTemplate redis,
+                       IdentityProfileValidator profiles) {
         this.users = users;
         this.passwords = passwords;
         this.jwt = jwt;
@@ -28,7 +32,8 @@ public class AuthService {
         this.profiles = profiles;
     }
 
-    public JwtService.IssuedToken login(String username, String password) {
+    public JwtService.IssuedToken login(String username,
+                                        String password) {
         var user = users.findByUsername(username.trim().toLowerCase(java.util.Locale.ROOT)).filter(u -> u.getStatus() == UserStatus.ACTIVE).filter(u -> passwords.matches(password, u.getPasswordHash())).filter(profiles::matches).orElseThrow(() -> new InvalidCredentialsException());
         return jwt.issue(user.getId(), user.getRole(), user.getCredentialVersion());
     }

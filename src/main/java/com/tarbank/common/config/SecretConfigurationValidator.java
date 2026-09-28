@@ -12,10 +12,15 @@ class SecretConfigurationValidator {
 
     private final DocumentProtectionProperties documentProtectionProperties;
 
+    private final IdempotencyProperties idempotencyProperties;
+
     SecretConfigurationValidator(
-            JwtProperties jwtProperties, DocumentProtectionProperties documentProtectionProperties) {
+            JwtProperties jwtProperties,
+            DocumentProtectionProperties documentProtectionProperties,
+            IdempotencyProperties idempotencyProperties) {
         this.jwtProperties = jwtProperties;
         this.documentProtectionProperties = documentProtectionProperties;
+        this.idempotencyProperties = idempotencyProperties;
     }
 
     @PostConstruct
@@ -23,9 +28,12 @@ class SecretConfigurationValidator {
         validateSecret("tarbank.jwt.signing-key", jwtProperties.signingKey());
         validateSecret("tarbank.document-protection.encryption-key", documentProtectionProperties.encryptionKey());
         validateSecret("tarbank.document-protection.lookup-hmac-key", documentProtectionProperties.lookupHmacKey());
+        validateSecret("tarbank.idempotency.request-fingerprint-hmac-key",
+                       idempotencyProperties.requestFingerprintHmacKey());
     }
 
-    private void validateSecret(String propertyName, String value) {
+    private void validateSecret(String propertyName,
+                                String value) {
         if (value == null || value.isBlank() || isUnresolvedPlaceholder(value)) {
             throw new IllegalStateException("Invalid configuration: " + propertyName + " must be configured.");
         }
