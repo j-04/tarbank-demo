@@ -638,10 +638,10 @@ This phase adds the reliability and operability behavior required by the demo wi
 
 ### Completion checklist
 
-- [ ] Every configurable simulator failure leaves either no state before commit or one replayable completed outcome after commit.
-- [ ] Expired short-lived records are cleaned safely; immutable financial and audit history is retained.
-- [ ] Redis rate limits basic abuse without weakening security when Redis is unavailable.
-- [ ] The service has safe logs, metrics, traces, liveness, readiness, and dependency-failure behavior without requiring an external observability stack.
+- [x] Every configurable simulator failure leaves either no state before commit or one replayable completed outcome after commit.
+- [x] Expired short-lived records are cleaned safely; immutable financial and audit history is retained.
+- [x] Redis rate limits basic abuse without weakening security when Redis is unavailable.
+- [x] The service has safe logs, metrics, traces, liveness, readiness, and dependency-failure behavior without requiring an external observability stack.
 - [ ] Commit the completed checkpoint with a message such as add resilience and observability.
 
 ## 10. Prepare the demo for review
