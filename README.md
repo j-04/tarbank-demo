@@ -96,6 +96,8 @@ Ordinary `docker compose down` preserves both named volumes. `docker compose dow
 
 ## Automated verification
 
+For a copy-paste local `.env`, an ordered terminal walkthrough, and Postman-ready cURL requests, use [`docs/MANUAL_RUNBOOK.md`](docs/MANUAL_RUNBOOK.md).
+
 The repeatable verification command runs unit and fresh Testcontainers integration tests, Liquibase migrations, configuration binding, reconciliation assertions, Docker Compose validation, and the Git whitespace check:
 
 ```bash

@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'idea'
     id 'org.springframework.boot' version '4.1.1'
     id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -21,12 +22,24 @@ configurations.configureEach {
     exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
 }
 
+def querydslGeneratedSources = layout.buildDirectory
+        .dir('generated/sources/annotationProcessor/java/main')
+        .get()
+        .asFile
+
 sourceSets {
     integrationTest {
         java.srcDir 'src/integrationTest/java'
         resources.srcDir 'src/integrationTest/resources'
         compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
         runtimeClasspath += output + compileClasspath
+    }
+}
+
+idea {
+    module {
+        sourceDirs += querydslGeneratedSources
+        generatedSourceDirs += querydslGeneratedSources
     }
 }
 

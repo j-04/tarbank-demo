@@ -44,6 +44,8 @@ services:
       POSTGRES_DB: ${TARBANK_DATABASE_NAME:?Set TARBANK_DATABASE_NAME in .env}
       POSTGRES_USER: ${TARBANK_DATABASE_USERNAME:?Set TARBANK_DATABASE_USERNAME in .env}
       POSTGRES_PASSWORD: ${TARBANK_DATABASE_PASSWORD:?Set TARBANK_DATABASE_PASSWORD in .env}
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
