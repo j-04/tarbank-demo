@@ -23,6 +23,12 @@ public class SensitiveDocumentService {
         this.properties = properties;
     }
 
+    /**
+     * Produces the canonical representation used by both lookup protection and encryption.
+     *
+     * @param raw document number supplied during onboarding
+     * @return Unicode-normalized uppercase alphanumeric value with separators removed
+     */
     public String normalize(String raw) {
         if (raw == null) {
             throw new IllegalArgumentException("Document number is required.");
@@ -36,6 +42,13 @@ public class SensitiveDocumentService {
         return normalized;
     }
 
+    /**
+     * Creates a deterministic keyed fingerprint for uniqueness checks. HMAC prevents an attacker
+     * with a database copy from cheaply enumerating likely document numbers.
+     *
+     * @param normalized canonical document number returned by {@link #normalize(String)}
+     * @return lowercase hexadecimal HMAC-SHA-256 lookup value
+     */
     public String lookupHash(String normalized) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -48,6 +61,13 @@ public class SensitiveDocumentService {
         }
     }
 
+    /**
+     * Encrypts a normalized document number with AES-GCM and a fresh IV. The serialized envelope
+     * carries the key version and IV so a future key-rotation process can identify the right key.
+     *
+     * @param normalized canonical document number returned by {@link #normalize(String)}
+     * @return UTF-8 bytes containing {@code keyVersion:base64url(iv):base64url(ciphertextAndTag)}
+     */
     public byte[] encrypt(String normalized) {
         try {
             byte[] iv = new byte[12];

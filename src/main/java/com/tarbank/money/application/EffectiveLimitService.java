@@ -29,12 +29,29 @@ public class EffectiveLimitService {
         this.clock = clock;
     }
 
+    /**
+     * Resolves the limit applicable at the current customer-local day. A non-expired override wins;
+     * otherwise the configured currency default is returned.
+     *
+     * @param account account whose currency and override are evaluated
+     * @param operation withdrawal or transfer limit to resolve
+     * @return effective amount and the instant at which that decision expires
+     */
     public EffectiveLimit effectiveLimit(AccountEntity account,
                                          LimitOperationType operation) {
         return effectiveLimit(account, operation, window(account.getCustomer()
                                                                 .getTimezone()));
     }
 
+    /**
+     * Resolves the limit using a caller-supplied window so limit lookup and usage accounting share
+     * the same instant and effective local date inside a money transaction.
+     *
+     * @param account account whose currency and override are evaluated
+     * @param operation withdrawal or transfer limit to resolve
+     * @param window time window already calculated for the operation
+     * @return effective amount and the instant at which that decision expires
+     */
     public EffectiveLimit effectiveLimit(AccountEntity account,
                                          LimitOperationType operation,
                                          LimitWindow window) {
@@ -56,6 +73,14 @@ public class EffectiveLimitService {
         return window(timezone, clock.instant());
     }
 
+    /**
+     * Converts a UTC instant into the customer's local banking day. The returned expiry is the
+     * next local midnight converted back to an instant, including daylight-saving transitions.
+     *
+     * @param timezone IANA timezone stored on the customer profile
+     * @param now instant at which the limit decision is evaluated
+     * @return current instant, effective local date, and next-local-midnight expiry
+     */
     public LimitWindow window(String timezone,
                               Instant now) {
         ZoneId zone = ZoneId.of(timezone);

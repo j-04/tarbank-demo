@@ -27,6 +27,16 @@ public class JwtService {
         this.jsonMapper = jsonMapper;
     }
 
+    /**
+     * Issues a signed access token containing only stable authorization claims. The credential
+     * version binds the token to the current password and allows password resets to invalidate all
+     * older tokens without maintaining a per-token database record.
+     *
+     * @param userId database identifier used as the JWT subject
+     * @param role authorization role copied into the token
+     * @param credentialVersion current user credential version
+     * @return compact token together with its revocation identifier and expiration instant
+     */
     public IssuedToken issue(Long userId,
                              Role role,
                              int credentialVersion) {
@@ -45,6 +55,15 @@ public class JwtService {
         return new IssuedToken(compact(claims), jti, expires);
     }
 
+    /**
+     * Verifies token structure, HMAC signature, algorithm, issuer, expiration, and required claims.
+     * User status, credential-version freshness, and logout invalidation are checked later by the
+     * authentication filter because they require database or Redis state.
+     *
+     * @param token compact bearer token received from the request
+     * @return authenticated claim set used to build the Spring Security principal
+     * @throws IllegalArgumentException when any cryptographic or semantic validation fails
+     */
     public TarbankPrincipal verify(String token) {
         try {
             String[] parts = token.split("\\.", -1);

@@ -18,18 +18,34 @@ import java.util.List;
 @Component
 public class RedisTokenBucketRateLimiter {
     private static final String SCRIPT = """
+            -- Input contract:
+            --   KEYS[1] = hashed bucket key for one policy group and caller identity
+            --   ARGV[1] = maximum number of tokens the bucket can hold
+            --   ARGV[2] = tokens restored per second; convert it to tokens per millisecond
             local key = KEYS[1]
             local capacity = tonumber(ARGV[1])
             local refill_per_ms = tonumber(ARGV[2]) / 1000.0
+
+            -- Use Redis server time so every application instance observes the same clock.
+            -- Redis TIME returns seconds and microseconds; bucket state is stored in milliseconds.
             local current = redis.call('TIME')
             local now_ms = tonumber(current[1]) * 1000 + math.floor(tonumber(current[2]) / 1000)
+
+            -- Each bucket is a hash containing its fractional token balance and last update time.
+            -- A missing bucket starts full, allowing an initial burst up to the configured capacity.
             local state = redis.call('HMGET', key, 'tokens', 'updated_at')
             local tokens = tonumber(state[1])
             local updated_at = tonumber(state[2])
             if tokens == nil then tokens = capacity end
             if updated_at == nil then updated_at = now_ms end
+
+            -- Restore tokens earned since the previous request. Clamp elapsed time at zero to
+            -- tolerate a Redis clock correction, and cap the result so idle buckets never overfill.
             local elapsed = math.max(0, now_ms - updated_at)
             tokens = math.min(capacity, tokens + elapsed * refill_per_ms)
+
+            -- One request costs one token. When the bucket is empty, calculate the exact delay
+            -- until one complete token is available; Java rounds this value up to Retry-After seconds.
             local allowed = 0
             local retry_ms = 0
             if tokens >= 1.0 then
@@ -38,9 +54,15 @@ public class RedisTokenBucketRateLimiter {
             else
                 retry_ms = math.ceil((1.0 - tokens) / refill_per_ms)
             end
+
+            -- Persist the post-decision state. Expire inactive buckets after twice the time needed
+            -- to refill an empty bucket, with a one-second minimum, to bound Redis memory usage.
             redis.call('HSET', key, 'tokens', tostring(tokens), 'updated_at', tostring(now_ms))
             local ttl_ms = math.max(1000, math.ceil((capacity / refill_per_ms) * 2))
             redis.call('PEXPIRE', key, ttl_ms)
+
+            -- Return [1, 0] when allowed, or [0, millisecondsUntilNextToken] when rejected.
+            -- The whole script executes atomically in Redis, so concurrent callers cannot overspend.
             return {allowed, retry_ms}
             """;
 
@@ -56,6 +78,16 @@ public class RedisTokenBucketRateLimiter {
         this.observations = observations;
     }
 
+    /**
+     * Atomically refills and consumes one distributed token using Redis server time. Hashing the
+     * identifier keeps usernames, account numbers, and network addresses out of Redis keys. Redis
+     * outages fail closed as dependency-unavailable errors instead of silently disabling limits.
+     *
+     * @param group policy namespace separating independent endpoint limits
+     * @param identifier caller identity within that namespace
+     * @param policy bucket capacity and per-second refill rate
+     * @return whether the request is allowed and whole retry-after seconds when it is denied
+     */
     public Decision consume(String group,
                             String identifier,
                             Policy policy) {

@@ -4,6 +4,52 @@ Tarbank is a Java 25 and Spring Boot 4 banking-service demo. It provides manager
 
 The supported local deployment is Docker Compose with exactly three services: the application, PostgreSQL, and Redis. PostgreSQL uses a named volume; PostgreSQL, Redis, and the management port are not published to the host.
 
+## Code guide for interviewers
+
+The codebase is organized by business capability. Each capability follows the same four-part structure: `api` adapts HTTP requests and responses, `application` contains use cases and business rules, `domain` defines persisted state and enums, and `persistence` contains Spring Data JPA repositories and QueryDSL queries. Controllers intentionally stay thin; start with the application services when reviewing behavior.
+
+```text
+src/main/java/com/tarbank
+├── customer/   # onboarding, profile changes, status transitions, password reset
+├── account/    # account creation, status transitions, daily limits, history
+├── money/      # deposits, withdrawals, transfers, ledger entries, usage limits
+├── security/   # login/logout, JWT validation, manager seeding, protected documents
+└── common/     # idempotency, errors, rate limiting, observability, cleanup, configuration
+```
+
+### Business workflow map
+
+| Workflow | HTTP entry point | Main business logic | Persistence and verification |
+| --- | --- | --- | --- |
+| Login and logout | [`AuthController`](src/main/java/com/tarbank/security/api/AuthController.java) | [`AuthService`](src/main/java/com/tarbank/security/application/AuthService.java) verifies credentials and account state; [`JwtService`](src/main/java/com/tarbank/security/application/JwtService.java) issues and verifies tokens; [`RedisSecurityStore`](src/main/java/com/tarbank/security/application/RedisSecurityStore.java) records logout invalidation | [`JwtAuthenticationFilter`](src/main/java/com/tarbank/security/application/JwtAuthenticationFilter.java) rebuilds the authenticated principal on later requests |
+| Customer onboarding | [`CustomerController`](src/main/java/com/tarbank/customer/api/CustomerController.java) | [`CustomerService#create`](src/main/java/com/tarbank/customer/application/CustomerService.java) validates and normalizes input, protects the identity document, hashes the password, and atomically creates the user, customer, and audit event | [`CustomerOnboardingIntegrationTest`](src/integrationTest/java/com/tarbank/customer/CustomerOnboardingIntegrationTest.java) covers authorization, validation, idempotency, secrecy, and rollback |
+| Customer lifecycle | [`CustomerController`](src/main/java/com/tarbank/customer/api/CustomerController.java) | [`CustomerLifecycleService`](src/main/java/com/tarbank/customer/application/CustomerLifecycleService.java) owns profile updates, allowed status transitions, optimistic-version checks, pagination, and password resets | [`CustomerLifecycleIntegrationTest`](src/integrationTest/java/com/tarbank/customer/CustomerLifecycleIntegrationTest.java) exercises lifecycle and concurrency behavior |
+| Account lifecycle | [`CustomerAccountController`](src/main/java/com/tarbank/account/api/CustomerAccountController.java) and [`AccountController`](src/main/java/com/tarbank/account/api/AccountController.java) | [`AccountService`](src/main/java/com/tarbank/account/application/AccountService.java) owns account creation, access rules, listing, status transitions, cursor handling, and ETag checks | [`AccountLifecycleIntegrationTest`](src/integrationTest/java/com/tarbank/account/AccountLifecycleIntegrationTest.java) verifies the end-to-end rules |
+| Deposits, withdrawals, and transfers | [`MoneyOperationController`](src/main/java/com/tarbank/money/api/MoneyOperationController.java) | [`MoneyOperationOrchestrator`](src/main/java/com/tarbank/money/application/MoneyOperationOrchestrator.java) wraps the operation with authorization, metrics, notification, and failure simulation; [`MoneyOperationService`](src/main/java/com/tarbank/money/application/MoneyOperationService.java) contains the transactional balance, locking, idempotency, daily-limit, ledger, and audit rules | [`MoneyQueryRepository`](src/main/java/com/tarbank/money/persistence/MoneyQueryRepository.java) contains QueryDSL locking and balance updates; [`MoneyOperationIntegrationTest`](src/integrationTest/java/com/tarbank/money/MoneyOperationIntegrationTest.java) covers success, replay, rollback, and concurrency |
+| Daily limits and account history | [`AccountController`](src/main/java/com/tarbank/account/api/AccountController.java) | [`AccountFeatureService`](src/main/java/com/tarbank/account/application/AccountFeatureService.java) owns limit-update rules, ETag/idempotency handling, authorization, and stable history cursors; [`EffectiveLimitService`](src/main/java/com/tarbank/money/application/EffectiveLimitService.java) computes timezone-aware effective limits and expiry | [`AccountFeatureQueryRepository`](src/main/java/com/tarbank/account/persistence/AccountFeatureQueryRepository.java) implements QueryDSL history and override queries; [`AccountLimitsAndHistoryIntegrationTest`](src/integrationTest/java/com/tarbank/account/AccountLimitsAndHistoryIntegrationTest.java) verifies the complete behavior |
+
+### Recommended review path
+
+For the most representative business flow, follow a transfer in this order:
+
+1. [`MoneyOperationController#transfer`](src/main/java/com/tarbank/money/api/MoneyOperationController.java) translates the authenticated HTTP request into an application call.
+2. [`MoneyOperationOrchestrator#transfer`](src/main/java/com/tarbank/money/application/MoneyOperationOrchestrator.java) establishes the authorized account scope and surrounds execution with operational concerns.
+3. [`MoneyOperationService#transfer`](src/main/java/com/tarbank/money/application/MoneyOperationService.java) executes the transaction. Its `execute` and `transferFirst` paths validate idempotency, lock accounts in deterministic order, enforce currency, balance, status, and daily-limit rules, update balances, and write the immutable transaction entries and audit event.
+4. [`MoneyQueryRepository`](src/main/java/com/tarbank/money/persistence/MoneyQueryRepository.java) shows the QueryDSL queries and pessimistic locks used to make concurrent operations safe.
+5. [`MoneyOperationIntegrationTest`](src/integrationTest/java/com/tarbank/money/MoneyOperationIntegrationTest.java) demonstrates the expected invariants, including replay and rollback semantics.
+
+### Shared rules and infrastructure
+
+- [`RequestIdempotencyService`](src/main/java/com/tarbank/common/application/RequestIdempotencyService.java) provides reusable atomic idempotency for customer, account, password, and limit operations. Money operations retain their own transaction-aware idempotency path in `MoneyOperationService`.
+- [`SensitiveDocumentService`](src/main/java/com/tarbank/security/application/SensitiveDocumentService.java) normalizes identity numbers, creates a keyed lookup hash, and encrypts the stored value.
+- [`AnonymousRateLimitFilter`](src/main/java/com/tarbank/common/http/AnonymousRateLimitFilter.java), [`AuthenticatedRateLimitFilter`](src/main/java/com/tarbank/common/http/AuthenticatedRateLimitFilter.java), and [`RedisTokenBucketRateLimiter`](src/main/java/com/tarbank/common/resilience/RedisTokenBucketRateLimiter.java) implement endpoint-aware distributed rate limiting.
+- [`ApiExceptionHandler`](src/main/java/com/tarbank/common/http/ApiExceptionHandler.java) is the single mapping point for the public error contract, while [`CorrelationIdFilter`](src/main/java/com/tarbank/common/http/CorrelationIdFilter.java) carries request identity through responses and logs.
+- [`DemoFailureSimulator`](src/main/java/com/tarbank/common/resilience/DemoFailureSimulator.java) exposes controlled failure points around money transactions; the integration suite verifies that failures do not violate ledger invariants.
+- [`RetentionCleanupService`](src/main/java/com/tarbank/common/application/RetentionCleanupService.java) applies bounded retention to expirable operational records under a PostgreSQL advisory lock. Immutable transactions, entries, and audit events are never deleted by it.
+- [`OpenApiConfiguration`](src/main/java/com/tarbank/common/config/OpenApiConfiguration.java) documents shared API conventions, and [`OpenApiIntegrationTest`](src/integrationTest/java/com/tarbank/common/openapi/OpenApiIntegrationTest.java) prevents the generated contract from drifting.
+
+The database contract starts at [`db.changelog-master.xml`](src/main/resources/db/changelog/db.changelog-master.xml). The numbered Liquibase changesets mirror the implementation sequence: identity and onboarding, customer/account lifecycle, money operations, and limits/history. JPA entities validate that schema at startup; migrations, rather than Hibernate, own schema changes.
+
 ## Prerequisites
 
 - Docker Engine with Docker Compose v2.

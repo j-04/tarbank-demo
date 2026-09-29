@@ -110,6 +110,16 @@ public class MoneyOperationService {
                                 "The request is invalid.", "TAR-API-001");
     }
 
+    /**
+     * Credits an account exactly once for a given customer-scoped idempotency key.
+     *
+     * @param accountNumber public number of the account to credit
+     * @param principal authenticated customer; the customer must own the account
+     * @param key UUID identifying this logical request and any safe retry
+     * @param requestedAmount positive amount supplied by the caller before scale normalization
+     * @param failure failure-injection callback used by the demo and integration tests
+     * @return the newly created result, or the stored result when the same request is replayed
+     */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Result<AccountOperationResponse> deposit(String accountNumber,
                                                     TarbankPrincipal principal,
@@ -128,6 +138,17 @@ public class MoneyOperationService {
         }
     }
 
+    /**
+     * Debits an owned account after enforcing account status, available balance, minimum amount,
+     * and the customer's timezone-aware daily withdrawal limit.
+     *
+     * @param accountNumber public number of the account to debit
+     * @param principal authenticated customer; the customer must own the account
+     * @param key UUID identifying this logical request and any safe retry
+     * @param requestedAmount positive amount supplied by the caller before scale normalization
+     * @param failure failure-injection callback used by the demo and integration tests
+     * @return a persisted success or business-failure result; replays return the original result
+     */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Result<AccountOperationResponse> withdraw(String accountNumber,
                                                      TarbankPrincipal principal,
@@ -146,6 +167,18 @@ public class MoneyOperationService {
         }
     }
 
+    /**
+     * Moves funds between two active same-currency accounts. The source account must belong to the
+     * authenticated customer; the destination may belong to another customer.
+     *
+     * @param sourceAccountNumber account that supplies the funds
+     * @param principal authenticated owner of the source account
+     * @param key UUID identifying this logical request and any safe retry
+     * @param destinationAccountNumber account that receives the funds
+     * @param requestedAmount positive amount supplied by the caller before scale normalization
+     * @param failure failure-injection callback used by the demo and integration tests
+     * @return a persisted success or business-failure result; replays return the original result
+     */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Result<TransferResponse> transfer(String sourceAccountNumber,
                                              TarbankPrincipal principal,
@@ -169,6 +202,21 @@ public class MoneyOperationService {
         }
     }
 
+    /**
+     * Owns the common money-operation idempotency protocol. It inserts an in-progress marker,
+     * locks that marker, rejects key reuse with different input, executes the mutation once, then
+     * stores the exact success or failure response for future retries in the same transaction.
+     *
+     * @param scope authorized source account and owning customer
+     * @param type operation type used to scope idempotency and metrics
+     * @param key caller-provided idempotency key
+     * @param requestHash canonical fingerprint of every business-significant input
+     * @param responseType concrete response type used to deserialize a replay
+     * @param failure failure-injection callback for the pre-commit boundary
+     * @param operation first-execution mutation; never invoked for a completed replay
+     * @param <T> successful response body type
+     * @return the first execution result or the previously stored result with {@code replayed=true}
+     */
     private <T> Result<T> execute(AccountScope scope,
                                   TransactionType type,
                                   UUID key,
@@ -214,6 +262,14 @@ public class MoneyOperationService {
         return new Result<>(httpStatus, attempt.body(), attempt.failure(), false);
     }
 
+    /**
+     * Reconstructs the original public result without touching balances, limits, or ledger rows.
+     *
+     * @param record locked, finalized idempotency record containing the serialized response
+     * @param responseType successful response type expected by the calling operation
+     * @param <T> successful response body type
+     * @return the stored success or failure marked as a replay
+     */
     private <T> Result<T> replay(MoneyOperationIdempotencyEntity record,
                                  Class<T> responseType) {
         if (record.getStatus() == MoneyIdempotencyStatus.IN_PROGRESS) {
@@ -259,6 +315,15 @@ public class MoneyOperationService {
                 money(amount), account.getCurrency(), money(balanceAfter), now));
     }
 
+    /**
+     * Performs the first withdrawal attempt while the account and its daily-usage row are locked.
+     * Business rejections are persisted as failed transactions so audit and replay behavior remain
+     * deterministic; only infrastructure exceptions roll the database transaction back.
+     *
+     * @param expected account identity established before entering the write path
+     * @param amount normalized amount to debit
+     * @return a successful response or a persistable business failure with its transaction row
+     */
     private Attempt<AccountOperationResponse> withdrawFirst(AccountScope expected,
                                                             BigDecimal amount) {
         AccountEntity account = lockAccount(expected.id());
@@ -315,6 +380,16 @@ public class MoneyOperationService {
                 money(amount), account.getCurrency(), money(balanceAfter), now));
     }
 
+    /**
+     * Performs the first transfer attempt. Both accounts are locked in deterministic identifier
+     * order to prevent opposing transfers from deadlocking. A successful transfer creates one
+     * transaction and two immutable entries whose deltas sum to zero.
+     *
+     * @param expectedSource authorized source identity captured before locking
+     * @param destinationAccountNumber public number of the receiving account
+     * @param amount normalized amount to move
+     * @return a successful transfer response or a persistable business failure
+     */
     private Attempt<TransferResponse> transferFirst(AccountScope expectedSource,
                                                     String destinationAccountNumber,
                                                     BigDecimal amount) {
@@ -412,6 +487,13 @@ public class MoneyOperationService {
         return new Attempt<>(transaction, body, null);
     }
 
+    /**
+     * Resolves an account only after verifying that the current principal is its customer owner.
+     *
+     * @param accountNumber public account number to authorize
+     * @param principal authenticated caller
+     * @return the minimal account identity required by the transactional operation
+     */
     @Transactional(readOnly = true)
     public AccountScope authorizeSourceAccount(String accountNumber,
                                                TarbankPrincipal principal) {
@@ -441,6 +523,16 @@ public class MoneyOperationService {
                        .orElseThrow(this::notFound);
     }
 
+    /**
+     * Atomically creates the per-account, per-operation, per-local-date usage row when absent and
+     * then locks it. This serializes concurrent limit consumption without a midnight reset job.
+     *
+     * @param account account consuming its daily allowance
+     * @param operation withdrawal or transfer allowance being consumed
+     * @param usageDate date in the owning customer's timezone
+     * @param now timestamp used when a new row is inserted
+     * @return the locked usage entity and whether this call inserted it
+     */
     private Usage lockUsage(AccountEntity account,
                             LimitOperationType operation,
                             LocalDate usageDate,

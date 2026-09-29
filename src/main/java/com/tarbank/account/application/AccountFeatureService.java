@@ -83,6 +83,18 @@ public class AccountFeatureService {
         this.json = json;
     }
 
+    /**
+     * Raises one or both limits for the current customer-local day. The account version guards
+     * against stale ETags, and the idempotency key makes a transport retry return the original
+     * version and response without creating another override or audit event.
+     *
+     * @param accountNumber account whose limits are being raised
+     * @param expectedVersion version parsed from the request's {@code If-Match} header
+     * @param principal authenticated owner or authorized manager
+     * @param key UUID identifying this logical update and any safe retry
+     * @param request optional withdrawal and transfer values; at least one must be supplied
+     * @return stored response, resulting entity version, effective date, and replay indicator
+     */
     public RequestIdempotencyService.Result<StoredLimitUpdate> updateLimits(String accountNumber,
                                                                             int expectedVersion,
                                                                             TarbankPrincipal principal,
@@ -175,6 +187,19 @@ public class AccountFeatureService {
         overrides.save(override);
     }
 
+    /**
+     * Reads immutable ledger entries using a cursor bound to this account. The service fetches one
+     * extra row to determine whether another page exists, so concurrent inserts cannot cause older
+     * entries to move between pages.
+     *
+     * @param accountNumber account whose ledger history is requested
+     * @param principal authenticated owner or authorized manager
+     * @param cursor opaque position returned by the preceding page, or {@code null}
+     * @param limit requested page size from 1 through 100
+     * @param from optional inclusive creation timestamp
+     * @param to optional exclusive creation timestamp
+     * @return newest-first transaction-entry page and the next opaque cursor when more rows exist
+     */
     @Transactional(readOnly = true)
     public TransactionHistoryPage history(String accountNumber,
                                           TarbankPrincipal principal,

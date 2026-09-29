@@ -87,6 +87,17 @@ public class AccountService {
         this.json = json;
     }
 
+    /**
+     * Creates an account for an active customer through the shared idempotency protocol. Account
+     * numbers come from a database-backed generator, and configured currency defaults initialize
+     * the account's daily limits.
+     *
+     * @param customerId customer that will own the account
+     * @param principal authenticated manager performing the operation
+     * @param key UUID identifying this logical creation and any safe retry
+     * @param request requested account currency
+     * @return first or replayed account-creation response
+     */
     public RequestIdempotencyService.Result<AccountCreatedResponse> create(
             Long customerId,
             TarbankPrincipal principal,
@@ -183,6 +194,17 @@ public class AccountService {
         return new VersionedAccount(details, account.getManagementVersion());
     }
 
+    /**
+     * Applies an allowed account-state transition under customer and account row locks. The caller's
+     * ETag version must still match after the lock is acquired, preventing stale administrative
+     * actions from overwriting a newer state.
+     *
+     * @param accountNumber account to change
+     * @param expectedVersion version parsed from {@code If-Match}
+     * @param request requested target status
+     * @param principal authenticated manager recorded in the audit event
+     * @return new public status and post-flush entity version for the response ETag
+     */
     @Transactional
     public VersionedStatus changeStatus(String accountNumber,
                                         int expectedVersion,

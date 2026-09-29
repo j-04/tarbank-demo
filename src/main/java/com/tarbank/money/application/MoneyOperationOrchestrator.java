@@ -90,6 +90,19 @@ public class MoneyOperationOrchestrator {
         rateLimits.checkMoneyAccount(canonicalAccountNumber);
     }
 
+    /**
+     * Adds non-transactional operational behavior around the transactional money service. The
+     * before-transaction failure point runs before any database write, while post-commit failures
+     * may fail the HTTP call but remain safely replayable with the same idempotency key.
+     *
+     * @param type operation type used for metrics and structured logging
+     * @param accountNumber source or target account used for failure-point selection
+     * @param principal authenticated customer initiating the request
+     * @param key idempotency key used to correlate a retry after an uncertain outcome
+     * @param operation transactional operation to invoke once preconditions pass
+     * @param <T> successful response body type
+     * @return the transactional service result, including replay and business-failure metadata
+     */
     private <T> MoneyOperationService.Result<T> execute(
             TransactionType type,
             Execution failure,

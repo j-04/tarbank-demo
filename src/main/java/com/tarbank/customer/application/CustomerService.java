@@ -79,6 +79,16 @@ public class CustomerService {
         this.json = json;
     }
 
+    /**
+     * Onboards a customer idempotently. The request fingerprint includes sensitive inputs without
+     * persisting them in plaintext; the first execution validates eligibility, hashes the password,
+     * protects the identity document, and writes user, customer, and audit state atomically.
+     *
+     * @param principal authenticated manager performing onboarding
+     * @param key UUID identifying this onboarding request and any safe retry
+     * @param request complete customer identity, contact, address, and credential input
+     * @return first or replayed customer summary
+     */
     public RequestIdempotencyService.Result<CustomerSummary> create(
             TarbankPrincipal principal,
             UUID key,
@@ -125,6 +135,16 @@ public class CustomerService {
         }
     }
 
+    /**
+     * Executes only after the idempotency row has been locked and confirmed as new.
+     *
+     * @param actor manager user stored on the audit event
+     * @param username normalized username used for uniqueness and login
+     * @param documentNumber normalized document number used only for protection
+     * @param documentHash keyed lookup hash used to enforce document uniqueness
+     * @param request validated onboarding input
+     * @return persisted customer summary stored in the idempotency record
+     */
     private CustomerSummary createFirst(UserEntity actor,
                                         String username,
                                         String documentNumber,

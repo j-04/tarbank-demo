@@ -67,6 +67,15 @@ public class MoneyQueryRepository {
         return Optional.ofNullable(locked);
     }
 
+    /**
+     * Pessimistically locks both transfer accounts in ascending database-id order. Every transfer
+     * follows the same ordering so concurrent transfers in opposite directions cannot deadlock by
+     * acquiring the two rows in a different sequence.
+     *
+     * @param firstId one account identifier; it need not be the smaller value
+     * @param secondId the other account identifier
+     * @return both managed account entities ordered by identifier
+     */
     public List<AccountEntity> lockAccounts(Long firstId,
                                             Long secondId) {
         QAccountEntity account = QAccountEntity.accountEntity;
@@ -110,6 +119,14 @@ public class MoneyQueryRepository {
                        .fetchOne());
     }
 
+    /**
+     * Applies the already validated balance while incrementing the optimistic version in the same
+     * SQL update. The caller must hold the account's pessimistic write lock.
+     *
+     * @param accountId locked account to update
+     * @param balance exact post-operation balance
+     * @param now audit timestamp for the update
+     */
     public void updateBalance(Long accountId,
                               BigDecimal balance,
                               Instant now) {

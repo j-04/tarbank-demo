@@ -31,6 +31,13 @@ public class RetentionCleanupService {
         this.clock = clock;
     }
 
+    /**
+     * Deletes only expired operational rows in bounded batches. A transaction-scoped PostgreSQL
+     * advisory lock ensures that at most one application instance performs cleanup at a time;
+     * immutable transaction entries and audit events are intentionally outside this workflow.
+     *
+     * @return whether this instance acquired the lock and the deleted-row count for each table
+     */
     @Transactional
     public CleanupResult cleanup() {
         if (!maintenance.tryAdvisoryLock(properties.advisoryLockId())) {

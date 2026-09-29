@@ -39,6 +39,20 @@ public class RequestIdempotencyService {
         this.entityManager = entityManager;
     }
 
+    /**
+     * Executes a non-credential request once and stores its successful response for exact replay.
+     *
+     * @param actor authenticated user that owns the idempotency namespace
+     * @param operation stable operation name, such as account creation
+     * @param scope business resource scope that prevents unrelated key collisions
+     * @param key client-generated UUID reused only for an identical retry
+     * @param requestHash canonical hash of all business-significant request fields
+     * @param type response type used to deserialize a completed replay
+     * @param successStatus HTTP status stored with the first successful response
+     * @param firstExecution mutation invoked only when no completed record exists
+     * @param <T> response body type
+     * @return first or stored response, its status, and whether it was replayed
+     */
     @Transactional
     public <T> Result<T> execute(UserEntity actor,
                                  String operation,
@@ -51,6 +65,23 @@ public class RequestIdempotencyService {
         return execute(actor, operation, scope, key, requestHash, null, type, successStatus, firstExecution);
     }
 
+    /**
+     * Implements the locking idempotency protocol, with optional migration from a legacy request
+     * fingerprint. The in-progress row and the business mutation share one transaction, so a
+     * rollback removes both and cannot leave a permanently incomplete request.
+     *
+     * @param actor authenticated user that owns the idempotency namespace
+     * @param operation stable operation name
+     * @param scope business resource scope
+     * @param key client-generated idempotency UUID
+     * @param requestHash current canonical request fingerprint
+     * @param legacyRequestHash prior fingerprint accepted only for an in-place compatibility upgrade
+     * @param type response type used to deserialize a completed replay
+     * @param successStatus HTTP status persisted with a successful response
+     * @param firstExecution mutation invoked exactly once for this actor, operation, scope, and key
+     * @param <T> response body type
+     * @return first or stored response, its status, and whether it was replayed
+     */
     @Transactional
     public <T> Result<T> execute(UserEntity actor,
                                  String operation,

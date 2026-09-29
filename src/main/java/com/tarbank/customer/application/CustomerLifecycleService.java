@@ -121,6 +121,16 @@ public class CustomerLifecycleService {
         return new VersionedCustomer(details(customer), customer.getVersion());
     }
 
+    /**
+     * Applies a partial profile update while preserving omitted values. The customer row is locked
+     * before the ETag version check, and the audit metadata records only fields that actually changed.
+     *
+     * @param id customer identifier
+     * @param expectedVersion version parsed from {@code If-Match}
+     * @param request partial profile update with presence-aware fields
+     * @param principal authenticated manager performing the update
+     * @return updated customer representation and post-flush version
+     */
     @Transactional
     public VersionedCustomer update(Long id,
                                     int expectedVersion,
@@ -185,6 +195,16 @@ public class CustomerLifecycleService {
         return new VersionedCustomer(details(customer), expectedVersion + 1);
     }
 
+    /**
+     * Changes customer status and cascades blocking or deactivation to every non-deactivated account
+     * in the same transaction. Reactivating a customer deliberately does not reactivate accounts.
+     *
+     * @param id customer identifier
+     * @param expectedVersion version parsed from {@code If-Match}
+     * @param request requested target customer status
+     * @param principal authenticated manager recorded on all generated audit events
+     * @return new customer status and post-flush version
+     */
     @Transactional
     public VersionedStatus changeStatus(Long id,
                                         int expectedVersion,
@@ -224,6 +244,17 @@ public class CustomerLifecycleService {
         return new VersionedStatus(new CustomerStatusResponse(id, next), customer.getVersion());
     }
 
+    /**
+     * Resets a customer password without storing the credential in the idempotency record. A keyed
+     * credential fingerprint detects conflicting key reuse, while the password hash and credential
+     * version update invalidate previously issued JWTs.
+     *
+     * @param customerId customer whose credential is replaced
+     * @param principal authenticated manager performing the reset
+     * @param key UUID identifying this reset and any safe retry
+     * @param request new plaintext password, retained only for validation and hashing
+     * @return first or replayed password-reset acknowledgement
+     */
     public RequestIdempotencyService.Result<PasswordResetResponse> resetPassword(Long customerId,
                                                                                  TarbankPrincipal principal,
                                                                                  UUID key,
