@@ -18,10 +18,12 @@ class DemoFailureSimulator implements FailureSimulator {
     @Override
     public Execution select(TransactionType operationType) {
         if (!properties.enabled()
-                || ThreadLocalRandom.current().nextDouble() >= properties.failureRate()) {
+                || ThreadLocalRandom.current()
+                                    .nextDouble() >= properties.failureRate()) {
             return Execution.none();
         }
         List<FailurePoint> points = List.copyOf(properties.allowedPoints());
-        return Execution.at(points.get(ThreadLocalRandom.current().nextInt(points.size())));
+        return Execution.at(points.get(ThreadLocalRandom.current()
+                                                        .nextInt(points.size())));
     }
 }

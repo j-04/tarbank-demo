@@ -18,6 +18,7 @@ import java.io.IOException;
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class AnonymousRateLimitFilter extends OncePerRequestFilter {
     private final RateLimitService limits;
+
     private final ApiSecurityErrorWriter errors;
 
     public AnonymousRateLimitFilter(RateLimitService limits,
@@ -28,7 +29,8 @@ public class AnonymousRateLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/api/");
+        return !request.getRequestURI()
+                       .startsWith("/api/");
     }
 
     @Override

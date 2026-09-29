@@ -16,8 +16,7 @@ public class AccountNumberGenerator {
     }
 
     public String next() {
-        Number reserved = (Number) entityManager.createNativeQuery(
-                                                        "select nextval('account_number_sequence')")
+        Number reserved = (Number) entityManager.createNativeQuery("select nextval('account_number_sequence')")
                                                 .getSingleResult();
         long value = reserved.longValue();
         if (value < 1 || value > MAX_NUMERIC_PORTION) {

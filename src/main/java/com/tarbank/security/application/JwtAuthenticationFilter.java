@@ -70,8 +70,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 throw new IllegalArgumentException();
             }
             var authentication = UsernamePasswordAuthenticationToken.authenticated(principal, null,
-                                                                                   List.of(new SimpleGrantedAuthority("ROLE_" + principal.role()
-                                                                                                                                         .name())));
+                                                                                   List.of(new SimpleGrantedAuthority(
+                                                                                           "ROLE_" + principal.role()
+                                                                                                              .name())));
             SecurityContextHolder.getContext()
                                  .setAuthentication(authentication);
             chain.doFilter(request, response);

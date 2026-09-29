@@ -8,7 +8,12 @@ import com.tarbank.common.api.ApiSuccessResponse;
 import com.tarbank.common.http.ApiException;
 import com.tarbank.common.http.CorrelationIdContext;
 import com.tarbank.security.application.TarbankPrincipal;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,7 +29,10 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 @RestController
-@RequestMapping("/api/v1/customers/{customerId}/accounts")
+@RequestMapping(value = "/api/v1/customers/{customerId}/accounts",
+        produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Manager account administration",
+        description = "Manager-only account creation and customer account listing.")
 public class CustomerAccountController {
     private static final Pattern UUID_V4 = Pattern.compile(
             "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
@@ -36,6 +44,13 @@ public class CustomerAccountController {
     }
 
     @PostMapping
+    @Operation(summary = "Create a zero-balance customer account")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Account created or idempotently replayed.",
+                    useReturnTypeSchema = true),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND."),
+            @ApiResponse(responseCode = "409", description = "IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS.")
+    })
     public ResponseEntity<ApiSuccessResponse<AccountCreatedResponse>> create(
             @PathVariable Long customerId,
             @AuthenticationPrincipal TarbankPrincipal principal,
@@ -47,6 +62,12 @@ public class CustomerAccountController {
     }
 
     @GetMapping
+    @Operation(summary = "List one customer's accounts")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Cursor-paginated account page.",
+                    useReturnTypeSchema = true),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND.")
+    })
     public ApiSuccessResponse<AccountPage> list(
             @PathVariable Long customerId,
             @RequestParam(required = false) String cursor,

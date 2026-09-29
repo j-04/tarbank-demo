@@ -114,14 +114,6 @@ public class MoneyOperationService {
     public Result<AccountOperationResponse> deposit(String accountNumber,
                                                     TarbankPrincipal principal,
                                                     UUID key,
-                                                    BigDecimal requestedAmount) {
-        return deposit(accountNumber, principal, key, requestedAmount, Execution.none());
-    }
-
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public Result<AccountOperationResponse> deposit(String accountNumber,
-                                                    TarbankPrincipal principal,
-                                                    UUID key,
                                                     BigDecimal requestedAmount,
                                                     Execution failure) {
         try {
@@ -140,14 +132,6 @@ public class MoneyOperationService {
     public Result<AccountOperationResponse> withdraw(String accountNumber,
                                                      TarbankPrincipal principal,
                                                      UUID key,
-                                                     BigDecimal requestedAmount) {
-        return withdraw(accountNumber, principal, key, requestedAmount, Execution.none());
-    }
-
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public Result<AccountOperationResponse> withdraw(String accountNumber,
-                                                     TarbankPrincipal principal,
-                                                     UUID key,
                                                      BigDecimal requestedAmount,
                                                      Execution failure) {
         try {
@@ -160,16 +144,6 @@ public class MoneyOperationService {
         } catch (PessimisticLockingFailureException exception) {
             throw requestInProgress();
         }
-    }
-
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public Result<TransferResponse> transfer(String sourceAccountNumber,
-                                             TarbankPrincipal principal,
-                                             UUID key,
-                                             String destinationAccountNumber,
-                                             BigDecimal requestedAmount) {
-        return transfer(sourceAccountNumber, principal, key, destinationAccountNumber,
-                        requestedAmount, Execution.none());
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -551,7 +525,8 @@ public class MoneyOperationService {
                             "outcome", "notification_failure"))) {
                         LOGGER.warn(
                                 "Notification adapter failed after commit status={} exceptionType={}",
-                                status, exception.getClass().getName());
+                                status, exception.getClass()
+                                                 .getName());
                     }
                 }
             }

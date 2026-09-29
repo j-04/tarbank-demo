@@ -7,6 +7,12 @@ import com.tarbank.customer.application.CustomerLifecycleService;
 import com.tarbank.customer.application.CustomerService;
 import com.tarbank.security.application.TarbankPrincipal;
 import com.tarbank.security.domain.UserStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -14,6 +20,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,7 +40,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @RestController
-@RequestMapping("/api/v1/customers")
+@RequestMapping(value = "/api/v1/customers", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Customers", description = "Manager-only customer lifecycle operations.")
 public class CustomerController {
     private static final Pattern UUID_V4 = Pattern.compile(
             "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
@@ -51,6 +59,13 @@ public class CustomerController {
     }
 
     @PostMapping
+    @Operation(summary = "Create an adult customer")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Customer created or idempotently replayed.",
+                    useReturnTypeSchema = true),
+            @ApiResponse(responseCode = "409", description = "Duplicate identity, idempotency conflict, or request in progress."),
+            @ApiResponse(responseCode = "422", description = "CUSTOMER_MUST_BE_ADULT.")
+    })
     public ResponseEntity<ApiSuccessResponse<CustomerSummary>> create(
             @AuthenticationPrincipal TarbankPrincipal principal,
             @RequestHeader("Idempotency-Key") String key,
@@ -61,6 +76,9 @@ public class CustomerController {
     }
 
     @GetMapping
+    @Operation(summary = "List customers")
+    @ApiResponse(responseCode = "200", description = "Cursor-paginated customer page.",
+            useReturnTypeSchema = true)
     public ApiSuccessResponse<CustomerPage> list(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String cursor,
@@ -69,6 +87,12 @@ public class CustomerController {
     }
 
     @GetMapping("/{customerId}")
+    @Operation(summary = "Get a customer")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Customer returned.", useReturnTypeSchema = true,
+                    headers = @Header(name = HttpHeaders.ETAG, description = "Current customer-vN version.")),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND.")
+    })
     public ResponseEntity<ApiSuccessResponse<CustomerDetails>> get(@PathVariable Long customerId) {
         var result = lifecycle.find(customerId);
         return ResponseEntity.ok()
@@ -77,6 +101,14 @@ public class CustomerController {
     }
 
     @PatchMapping("/{customerId}")
+    @Operation(summary = "Update a customer profile")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Customer updated.", useReturnTypeSchema = true,
+                    headers = @Header(name = HttpHeaders.ETAG, description = "Updated customer-vN version.")),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND."),
+            @ApiResponse(responseCode = "412", description = "PRECONDITION_FAILED."),
+            @ApiResponse(responseCode = "428", description = "PRECONDITION_REQUIRED.")
+    })
     public ResponseEntity<ApiSuccessResponse<CustomerDetails>> update(
             @PathVariable Long customerId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
@@ -89,6 +121,15 @@ public class CustomerController {
     }
 
     @PatchMapping("/{customerId}/status")
+    @Operation(summary = "Change customer status")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Customer status changed.", useReturnTypeSchema = true,
+                    headers = @Header(name = HttpHeaders.ETAG, description = "Updated customer-vN version.")),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND."),
+            @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION."),
+            @ApiResponse(responseCode = "412", description = "PRECONDITION_FAILED."),
+            @ApiResponse(responseCode = "428", description = "PRECONDITION_REQUIRED.")
+    })
     public ResponseEntity<ApiSuccessResponse<CustomerStatusResponse>> changeStatus(
             @PathVariable Long customerId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
@@ -101,6 +142,13 @@ public class CustomerController {
     }
 
     @PostMapping("/{customerId}/password-reset")
+    @Operation(summary = "Reset a customer password", description = "Manager-assisted branch-terminal operation that invalidates existing customer JWTs.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Password reset or idempotently replayed.",
+                    useReturnTypeSchema = true),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND."),
+            @ApiResponse(responseCode = "409", description = "IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS.")
+    })
     public ResponseEntity<ApiSuccessResponse<PasswordResetResponse>> resetPassword(
             @PathVariable Long customerId,
             @RequestHeader("Idempotency-Key") String key,
@@ -155,10 +203,16 @@ public class CustomerController {
     }
 
     public record CreateCustomerRequest(
-            @NotBlank String username, @NotBlank String password,
+            @Schema(minLength = 3, maxLength = 32, pattern = "^[a-z][a-z0-9._-]{2,31}$")
+            @NotBlank String username,
+            @Schema(minLength = 12, maxLength = 12, pattern = "^[\\x20-\\x7E]{12}$",
+                    description = "Exactly 12 printable ASCII characters and different from the username.")
+            @NotBlank String password,
             @NotBlank @Size(max = 100) String firstName, @Size(max = 100) String middleName,
             @NotBlank @Size(max = 100) String lastName, @NotNull LocalDate dateOfBirth,
-            @Email @Size(max = 320) String email, @NotBlank String phoneNumber,
+            @Email @Size(max = 320) String email,
+            @Schema(pattern = "^\\+[1-9][0-9]{7,14}$", description = "E.164 phone number.")
+            @NotBlank String phoneNumber,
             @NotNull @Valid ResidentialAddress residentialAddress,
             @NotNull @Valid IdentityDocument identityDocument,
             @NotBlank @Size(max = 64) String timezone) {
@@ -197,7 +251,10 @@ public class CustomerController {
     public record CustomerStatusResponse(Long customerId, UserStatus status) {
     }
 
-    public record PasswordResetRequest(@NotBlank String newPassword) {
+    public record PasswordResetRequest(
+            @Schema(minLength = 12, maxLength = 12, pattern = "^[\\x20-\\x7E]{12}$",
+                    description = "Exactly 12 printable ASCII characters and different from the username.")
+            @NotBlank String newPassword) {
     }
 
     public record PasswordResetResponse(Long customerId, String status) {

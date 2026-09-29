@@ -42,14 +42,19 @@ class BootstrapSecurityConfiguration {
                                     RateLimitService rateLimits) throws Exception {
         return http.csrf(AbstractHttpConfigurer::disable)
                    .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                   .exceptionHandling(e -> e.authenticationEntryPoint((q, p, x) -> errors.write(p, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication is required."))
-                                            .accessDeniedHandler((q, p, x) -> errors.write(p, HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.")))
+                   .exceptionHandling(e -> e.authenticationEntryPoint(
+                                                    (q, p, x) -> errors.write(p, HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED",
+                                                                              "Authentication is required."))
+                                            .accessDeniedHandler(
+                                                    (q, p, x) -> errors.write(p, HttpStatus.FORBIDDEN, "ACCESS_DENIED",
+                                                                              "Access is denied.")))
                    .addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class)
                    .addFilterAfter(new AuthenticatedRateLimitFilter(rateLimits, errors),
                                    JwtAuthenticationFilter.class)
                    .authorizeHttpRequests(a -> a.requestMatchers(HttpMethod.POST, "/api/v1/auth/login")
                                                 .permitAll()
-                                                .requestMatchers("/swagger-ui/**", "/v3/api-docs/**")
+                                                .requestMatchers("/swagger-ui.html", "/swagger-ui/**",
+                                                                 "/v3/api-docs", "/v3/api-docs/**")
                                                 .permitAll()
                                                 .requestMatchers("/api/v1/auth/logout")
                                                 .authenticated()

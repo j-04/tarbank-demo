@@ -15,6 +15,7 @@ import java.io.IOException;
 
 public class AuthenticatedRateLimitFilter extends OncePerRequestFilter {
     private final RateLimitService limits;
+
     private final ApiSecurityErrorWriter errors;
 
     public AuthenticatedRateLimitFilter(RateLimitService limits,
@@ -27,8 +28,11 @@ public class AuthenticatedRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        Object principal = SecurityContextHolder.getContext().getAuthentication() == null
-                ? null : SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        Object principal = SecurityContextHolder.getContext()
+                                                .getAuthentication() == null
+                ? null : SecurityContextHolder.getContext()
+                                              .getAuthentication()
+                                              .getPrincipal();
         if (!(principal instanceof TarbankPrincipal tarbankPrincipal)) {
             filterChain.doFilter(request, response);
             return;

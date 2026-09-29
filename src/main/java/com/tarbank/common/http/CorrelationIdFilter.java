@@ -49,7 +49,8 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
         response.setHeader(HEADER_NAME, correlationId.toString());
         CorrelationIdContext.set(correlationId);
-        try (CloseableThreadContext.Instance ignored = CloseableThreadContext.put("correlationId", correlationId.toString())) {
+        try (CloseableThreadContext.Instance ignored = CloseableThreadContext.put("correlationId",
+                                                                                  correlationId.toString())) {
             filterChain.doFilter(request, response);
         } finally {
             CorrelationIdContext.clear();

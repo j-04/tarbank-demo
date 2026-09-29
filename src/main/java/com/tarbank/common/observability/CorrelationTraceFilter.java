@@ -30,7 +30,8 @@ class CorrelationTraceFilter extends OncePerRequestFilter {
         Observation observation = observations.getCurrentObservation();
         if (observation != null && CorrelationIdContext.current() != null) {
             observation.highCardinalityKeyValue(
-                    "correlation.id", CorrelationIdContext.current().toString());
+                    "correlation.id", CorrelationIdContext.current()
+                                                          .toString());
         }
         filterChain.doFilter(request, response);
     }

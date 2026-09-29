@@ -55,13 +55,17 @@ public class SensitiveDocumentService {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(MessageDigest.getInstance("SHA-256")
                                                                             .digest(properties.encryptionKey()
-                                                                                              .getBytes(StandardCharsets.UTF_8)), "AES"), new GCMParameterSpec(128, iv));
+                                                                                              .getBytes(
+                                                                                                      StandardCharsets.UTF_8)),
+                                                               "AES"), new GCMParameterSpec(128, iv));
             byte[] encrypted = cipher.doFinal(normalized.getBytes(StandardCharsets.UTF_8));
             return (properties.keyVersion() + ":" + Base64.getUrlEncoder()
                                                           .withoutPadding()
                                                           .encodeToString(iv) + ":" + Base64.getUrlEncoder()
                                                                                             .withoutPadding()
-                                                                                            .encodeToString(encrypted)).getBytes(StandardCharsets.UTF_8);
+                                                                                            .encodeToString(
+                                                                                                    encrypted)).getBytes(
+                    StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new IllegalStateException("Document encryption is unavailable.", e);
         }

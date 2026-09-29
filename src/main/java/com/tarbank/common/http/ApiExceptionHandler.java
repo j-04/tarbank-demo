@@ -55,9 +55,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiErrorResponse> known(ApiException exception) {
         log(Level.WARN, exception.getInternalCode(), exception.getCode(),
-            exception.getStatus().value(), "rejected", "Known API request rejected");
+            exception.getStatus()
+                     .value(), "rejected", "Known API request rejected");
         return ResponseEntity.status(exception.getStatus())
-                             .body(ApiErrorResponses.error(correlationId(), exception.getCode(), exception.getSafeMessage(),
+                             .body(ApiErrorResponses.error(correlationId(), exception.getCode(),
+                                                           exception.getSafeMessage(),
                                                            exception.getFieldErrors()));
     }
 
@@ -66,7 +68,8 @@ public class ApiExceptionHandler {
         log(Level.WARN, "TAR-AUTH-001", "INVALID_CREDENTIALS", 401,
             "rejected", "Authentication request rejected");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                             .body(ApiErrorResponses.error(correlationId(), "INVALID_CREDENTIALS", "Invalid credentials."));
+                             .body(ApiErrorResponses.error(correlationId(), "INVALID_CREDENTIALS",
+                                                           "Invalid credentials."));
     }
 
     @ExceptionHandler(RateLimitExceededException.class)
@@ -87,7 +90,8 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiErrorResponse> dependencyUnavailable(Exception exception) {
         log(Level.ERROR, "TAR-INFRA-002", "DEPENDENCY_UNAVAILABLE", 503,
             "dependency_unavailable", "Required dependency unavailable exceptionType={}",
-            exception.getClass().getName());
+            exception.getClass()
+                     .getName());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                              .body(ApiErrorResponses.error(
                                      correlationId(), "DEPENDENCY_UNAVAILABLE",
@@ -112,7 +116,8 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiErrorResponse> unexpected(Exception exception) {
         log(Level.ERROR, "TAR-INFRA-001", "INTERNAL_ERROR", 500,
             "technical_failure", "Unexpected request failure exceptionType={}",
-            exception.getClass().getName());
+            exception.getClass()
+                     .getName());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                              .body(ApiErrorResponses.internalError(correlationId()));
     }

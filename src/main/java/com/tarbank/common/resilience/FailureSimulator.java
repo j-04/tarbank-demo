@@ -13,12 +13,16 @@ public interface FailureSimulator {
         }
 
         public static Execution at(FailurePoint point) {
-            if (point == null) throw new IllegalArgumentException("Failure point is required.");
+            if (point == null) {
+                throw new IllegalArgumentException("Failure point is required.");
+            }
             return new Execution(point);
         }
 
         public void inject(FailurePoint point) {
-            if (selectedPoint == point) throw new SimulatedFailureException(point);
+            if (selectedPoint == point) {
+                throw new SimulatedFailureException(point);
+            }
         }
     }
 }

@@ -91,21 +91,25 @@ public class CustomerService {
         String documentHash = documents.lookupHash(documentNumber);
         validateReplayStable(request, username);
         String requestHash = hash(new CustomerCreateHash(username, request.password(), trim(request.firstName()),
-                                                         nullableTrim(request.middleName()), trim(request.lastName()), request.dateOfBirth(),
+                                                         nullableTrim(request.middleName()), trim(request.lastName()),
+                                                         request.dateOfBirth(),
                                                          nullableTrim(request.email()), request.phoneNumber()
                                                                                                .trim(),
                                                          new AddressHash(country(request.residentialAddress()
-                                                                                        .country()), trim(request.residentialAddress()
-                                                                                                                 .city()),
+                                                                                        .country()),
                                                                          trim(request.residentialAddress()
-                                                                                     .postalCode()), trim(request.residentialAddress()
-                                                                                                                 .line1()),
+                                                                                     .city()),
+                                                                         trim(request.residentialAddress()
+                                                                                     .postalCode()),
+                                                                         trim(request.residentialAddress()
+                                                                                     .line1()),
                                                                          nullableTrim(request.residentialAddress()
                                                                                              .line2())),
                                                          new DocumentHash(trim(request.identityDocument()
                                                                                       .type()).toUpperCase(Locale.ROOT),
                                                                           country(request.identityDocument()
-                                                                                         .issuingCountry()), documentNumber,
+                                                                                         .issuingCountry()),
+                                                                          documentNumber,
                                                                           request.identityDocument()
                                                                                  .expiresOn()),
                                                          request.timezone()
@@ -134,32 +138,44 @@ public class CustomerService {
                                   .type()).toUpperCase(Locale.ROOT);
         String issuingCountry = country(request.identityDocument()
                                                .issuingCountry());
-        if (customers.findByDocumentTypeAndDocumentIssuingCountryAndDocumentNumberHash(type, issuingCountry, documentHash)
+        if (customers.findByDocumentTypeAndDocumentIssuingCountryAndDocumentNumberHash(type, issuingCountry,
+                                                                                       documentHash)
                      .isPresent()) {
-            throw conflict("IDENTITY_DOCUMENT_ALREADY_EXISTS", "Identity document is already in use.", "TAR-CUSTOMER-003");
+            throw conflict("IDENTITY_DOCUMENT_ALREADY_EXISTS", "Identity document is already in use.",
+                           "TAR-CUSTOMER-003");
         }
         ManagerEntity manager = managers.findById(actor.getId())
                                         .orElseThrow(
-                                                () -> new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.", "TAR-AUTH-002"));
+                                                () -> new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED",
+                                                                       "Access is denied.", "TAR-AUTH-002"));
         Instant now = Instant.now(clock);
-        UserEntity user = users.saveAndFlush(new UserEntity(Role.CUSTOMER, username, passwords.encode(request.password()),
-                                                            trim(request.firstName()), nullableTrim(request.middleName()), trim(request.lastName()), now));
+        UserEntity user = users.saveAndFlush(
+                new UserEntity(Role.CUSTOMER, username, passwords.encode(request.password()),
+                               trim(request.firstName()), nullableTrim(request.middleName()), trim(request.lastName()),
+                               now));
         CustomerEntity customer = customers.saveAndFlush(new CustomerEntity(user, request.dateOfBirth(),
-                                                                            nullableTrim(request.email()), request.phoneNumber()
-                                                                                                                  .trim(), country(request.residentialAddress()
-                                                                                                                                          .country()),
+                                                                            nullableTrim(request.email()),
+                                                                            request.phoneNumber()
+                                                                                   .trim(),
+                                                                            country(request.residentialAddress()
+                                                                                           .country()),
                                                                             trim(request.residentialAddress()
-                                                                                        .city()), trim(request.residentialAddress()
-                                                                                                              .postalCode()),
+                                                                                        .city()),
                                                                             trim(request.residentialAddress()
-                                                                                        .line1()), nullableTrim(request.residentialAddress()
-                                                                                                                       .line2()), type,
-                                                                            issuingCountry, documents.encrypt(documentNumber), documentHash, request.identityDocument()
-                                                                                                                                                    .expiresOn(),
+                                                                                        .postalCode()),
+                                                                            trim(request.residentialAddress()
+                                                                                        .line1()),
+                                                                            nullableTrim(request.residentialAddress()
+                                                                                                .line2()), type,
+                                                                            issuingCountry,
+                                                                            documents.encrypt(documentNumber),
+                                                                            documentHash, request.identityDocument()
+                                                                                                 .expiresOn(),
                                                                             request.timezone()
                                                                                    .trim(), manager));
         audits.save(new AuditEventEntity(actor, "CUSTOMER_CREATED", "CUSTOMER", String.valueOf(customer.getUserId()),
-                                         CorrelationIdContext.current(), "{\"customerId\":" + customer.getUserId() + "}", now));
+                                         CorrelationIdContext.current(),
+                                         "{\"customerId\":" + customer.getUserId() + "}", now));
         return new CustomerSummary(customer.getUserId(), user.getUsername(), user.getStatus());
     }
 
@@ -172,11 +188,17 @@ public class CustomerService {
                                    customer.getUser()
                                            .getFirstName(), customer.getUser()
                                                                     .getMiddleName(), customer.getUser()
-                                                                                              .getLastName(), customer.getDateOfBirth(),
-                                   customer.getEmail(), customer.getPhoneNumber(), new ResidentialAddress(customer.getResidenceCountry(),
-                                                                                                          customer.getResidenceCity(), customer.getResidencePostalCode(), customer.getResidenceAddressLine1(),
-                                                                                                          customer.getResidenceAddressLine2()), new SafeIdentityDocument(customer.getDocumentType(),
-                                                                                                                                                                         customer.getDocumentIssuingCountry(), customer.getDocumentExpiresOn()), customer.getTimezone());
+                                                                                              .getLastName(),
+                                   customer.getDateOfBirth(),
+                                   customer.getEmail(), customer.getPhoneNumber(),
+                                   new ResidentialAddress(customer.getResidenceCountry(),
+                                                          customer.getResidenceCity(),
+                                                          customer.getResidencePostalCode(),
+                                                          customer.getResidenceAddressLine1(),
+                                                          customer.getResidenceAddressLine2()),
+                                   new SafeIdentityDocument(customer.getDocumentType(),
+                                                            customer.getDocumentIssuingCountry(),
+                                                            customer.getDocumentExpiresOn()), customer.getTimezone());
     }
 
     private void validateReplayStable(CreateCustomerRequest request,
@@ -226,7 +248,8 @@ public class CustomerService {
             return conflict("USERNAME_ALREADY_EXISTS", "Username is already in use.", "TAR-CUSTOMER-002");
         }
         if ("uk_customers_document".equals(constraint)) {
-            return conflict("IDENTITY_DOCUMENT_ALREADY_EXISTS", "Identity document is already in use.", "TAR-CUSTOMER-003");
+            return conflict("IDENTITY_DOCUMENT_ALREADY_EXISTS", "Identity document is already in use.",
+                            "TAR-CUSTOMER-003");
         }
         throw exception;
     }
@@ -251,7 +274,8 @@ public class CustomerService {
     }
 
     private ApiException notFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Requested resource was not found.", "TAR-CUSTOMER-004");
+        return new ApiException(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Requested resource was not found.",
+                                "TAR-CUSTOMER-004");
     }
 
     private String country(String value) {

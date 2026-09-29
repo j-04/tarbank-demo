@@ -11,7 +11,9 @@ import java.util.Locale;
 @Service
 public class RateLimitService {
     private final RateLimitProperties properties;
+
     private final RedisTokenBucketRateLimiter buckets;
+
     private final OperationalMetrics metrics;
 
     public RateLimitService(RateLimitProperties properties,
@@ -26,9 +28,11 @@ public class RateLimitService {
         check("anonymous", directAddress, properties.anonymous());
     }
 
-    public void checkLogin(String directAddress, String username) {
+    public void checkLogin(String directAddress,
+                           String username) {
         check("login_ip", directAddress, properties.loginIp());
-        String normalized = username == null ? "" : username.trim().toLowerCase(Locale.ROOT);
+        String normalized = username == null ? "" : username.trim()
+                                                            .toLowerCase(Locale.ROOT);
         check("login_username", normalized, properties.loginUsername());
     }
 
@@ -40,8 +44,12 @@ public class RateLimitService {
         check("money_account", accountNumber, properties.moneyAccount());
     }
 
-    private void check(String group, String identifier, Policy policy) {
-        if (!properties.enabled()) return;
+    private void check(String group,
+                       String identifier,
+                       Policy policy) {
+        if (!properties.enabled()) {
+            return;
+        }
         RedisTokenBucketRateLimiter.Decision decision = buckets.consume(group, identifier, policy);
         if (!decision.allowed()) {
             metrics.rateLimitRejected(group);

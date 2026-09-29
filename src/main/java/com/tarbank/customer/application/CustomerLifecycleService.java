@@ -133,7 +133,8 @@ public class CustomerLifecycleService {
         Set<String> changedFields = new TreeSet<>();
 
         String firstName = suppliedText(request.firstNameSupplied(), request.getFirstName(), "firstName", 100);
-        String middleName = suppliedNullableText(request.middleNameSupplied(), request.getMiddleName(), "middleName", 100);
+        String middleName = suppliedNullableText(request.middleNameSupplied(), request.getMiddleName(), "middleName",
+                                                 100);
         String lastName = suppliedText(request.lastNameSupplied(), request.getLastName(), "lastName", 100);
         customer.getUser()
                 .updateNames(firstName, request.firstNameSupplied(), middleName,
@@ -179,7 +180,8 @@ public class CustomerLifecycleService {
             throw staleVersion();
         }
         audits.save(new AuditEventEntity(manager.getUser(), "CUSTOMER_UPDATED", "CUSTOMER", id.toString(),
-                                         CorrelationIdContext.current(), json(Map.of("changedFields", changedFields)), now));
+                                         CorrelationIdContext.current(), json(Map.of("changedFields", changedFields)),
+                                         now));
         return new VersionedCustomer(details(customer), expectedVersion + 1);
     }
 
@@ -210,7 +212,8 @@ public class CustomerLifecycleService {
                     account.changeStatus(target, manager, now);
                     audits.save(new AuditEventEntity(manager.getUser(), "ACCOUNT_STATUS_CHANGED", "ACCOUNT",
                                                      account.getAccountNumber(), CorrelationIdContext.current(),
-                                                     json(Map.of("oldStatus", old.name(), "newStatus", target.name())), now));
+                                                     json(Map.of("oldStatus", old.name(), "newStatus", target.name())),
+                                                     now));
                 }
             }
         }
@@ -239,8 +242,10 @@ public class CustomerLifecycleService {
         IdempotencyFingerprintService.Fingerprints requestFingerprints =
                 fingerprints.credential(operation, scope, request.newPassword());
         return idempotency.execute(actor, operation, scope, key,
-                                   requestFingerprints.current(), requestFingerprints.legacy(), PasswordResetResponse.class,
-                                   HttpStatus.OK.value(), () -> resetPasswordFirst(customerId, actor, request.newPassword()));
+                                   requestFingerprints.current(), requestFingerprints.legacy(),
+                                   PasswordResetResponse.class,
+                                   HttpStatus.OK.value(),
+                                   () -> resetPasswordFirst(customerId, actor, request.newPassword()));
     }
 
     private PasswordResetResponse resetPasswordFirst(Long customerId,
@@ -287,7 +292,8 @@ public class CustomerLifecycleService {
     private ManagerEntity manager(TarbankPrincipal principal) {
         return managers.findById(principal.userId())
                        .orElseThrow(
-                               () -> new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.", "TAR-AUTH-002"));
+                               () -> new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.",
+                                                      "TAR-AUTH-002"));
     }
 
     private CustomerSummary summary(CustomerEntity customer) {
@@ -306,9 +312,11 @@ public class CustomerLifecycleService {
                                                                                               .getLastName(),
                                    customer.getDateOfBirth(), customer.getEmail(), customer.getPhoneNumber(),
                                    new ResidentialAddress(customer.getResidenceCountry(), customer.getResidenceCity(),
-                                                          customer.getResidencePostalCode(), customer.getResidenceAddressLine1(),
+                                                          customer.getResidencePostalCode(),
+                                                          customer.getResidenceAddressLine1(),
                                                           customer.getResidenceAddressLine2()),
-                                   new SafeIdentityDocument(customer.getDocumentType(), customer.getDocumentIssuingCountry(),
+                                   new SafeIdentityDocument(customer.getDocumentType(),
+                                                            customer.getDocumentIssuingCountry(),
                                                             customer.getDocumentExpiresOn()), customer.getTimezone());
     }
 

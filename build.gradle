@@ -52,6 +52,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-liquibase'
     implementation 'org.springframework.boot:spring-boot-micrometer-tracing-opentelemetry'
     implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
     implementation 'org.apache.logging.log4j:log4j-layout-template-json'
     runtimeOnly 'org.postgresql:postgresql'
 
@@ -68,6 +69,7 @@ dependencies {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 25
+    options.compilerArgs.add('-parameters')
 }
 
 tasks.named('test') {

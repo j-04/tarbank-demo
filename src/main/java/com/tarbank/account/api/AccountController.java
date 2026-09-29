@@ -10,10 +10,17 @@ import com.tarbank.common.http.CorrelationIdContext;
 import com.tarbank.money.domain.TransactionStatus;
 import com.tarbank.money.domain.TransactionType;
 import com.tarbank.security.application.TarbankPrincipal;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,7 +40,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @RestController
-@RequestMapping("/api/v1/accounts")
+@RequestMapping(value = "/api/v1/accounts", produces = MediaType.APPLICATION_JSON_VALUE)
+@Tag(name = "Accounts", description = "Customer-owned account access, lifecycle, limits, and history.")
 public class AccountController {
     private static final Pattern ACCOUNT_ETAG = Pattern.compile("^account-v(0|[1-9][0-9]*)$");
 
@@ -51,6 +59,9 @@ public class AccountController {
     }
 
     @GetMapping
+    @Operation(summary = "List the authenticated customer's accounts")
+    @ApiResponse(responseCode = "200", description = "Cursor-paginated account page.",
+            useReturnTypeSchema = true)
     public ApiSuccessResponse<AccountPage> list(
             @AuthenticationPrincipal TarbankPrincipal principal,
             @RequestParam(required = false) String cursor,
@@ -60,6 +71,12 @@ public class AccountController {
     }
 
     @GetMapping("/{accountNumber}")
+    @Operation(summary = "Get account balance, status, and effective limits")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Account returned.", useReturnTypeSchema = true,
+                    headers = @Header(name = HttpHeaders.ETAG, description = "Current account-vN version.")),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND.")
+    })
     public ResponseEntity<ApiSuccessResponse<AccountDetails>> get(
             @PathVariable String accountNumber,
             @AuthenticationPrincipal TarbankPrincipal principal) {
@@ -70,6 +87,15 @@ public class AccountController {
     }
 
     @PatchMapping("/{accountNumber}/status")
+    @Operation(summary = "Change account status")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Account status changed.", useReturnTypeSchema = true,
+                    headers = @Header(name = HttpHeaders.ETAG, description = "Updated account-vN version.")),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND."),
+            @ApiResponse(responseCode = "409", description = "INVALID_STATUS_TRANSITION."),
+            @ApiResponse(responseCode = "412", description = "PRECONDITION_FAILED."),
+            @ApiResponse(responseCode = "428", description = "PRECONDITION_REQUIRED.")
+    })
     public ResponseEntity<ApiSuccessResponse<AccountStatusResponse>> changeStatus(
             @PathVariable String accountNumber,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
@@ -82,6 +108,17 @@ public class AccountController {
     }
 
     @PatchMapping("/{accountNumber}/daily-limits")
+    @Operation(summary = "Increase today's withdrawal or transfer limits")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Daily limits updated or idempotently replayed.",
+                    useReturnTypeSchema = true,
+                    headers = @Header(name = HttpHeaders.ETAG, description = "Updated account-vN version.")),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND."),
+            @ApiResponse(responseCode = "409", description = "IDEMPOTENCY_CONFLICT or REQUEST_IN_PROGRESS."),
+            @ApiResponse(responseCode = "412", description = "PRECONDITION_FAILED."),
+            @ApiResponse(responseCode = "422", description = "DAILY_LIMIT_OUT_OF_RANGE."),
+            @ApiResponse(responseCode = "428", description = "PRECONDITION_REQUIRED.")
+    })
     public ResponseEntity<ApiSuccessResponse<DailyLimitUpdateResponse>> updateDailyLimits(
             @PathVariable String accountNumber,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -99,6 +136,11 @@ public class AccountController {
     }
 
     @GetMapping("/{accountNumber}/transactions")
+    @Operation(summary = "Get cursor-paginated account history")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Account history page.", useReturnTypeSchema = true),
+            @ApiResponse(responseCode = "404", description = "RESOURCE_NOT_FOUND.")
+    })
     public ApiSuccessResponse<TransactionHistoryPage> history(
             @PathVariable String accountNumber,
             @AuthenticationPrincipal TarbankPrincipal principal,
@@ -175,8 +217,11 @@ public class AccountController {
     public record AccountStatusResponse(String accountNumber, AccountStatus status) {
     }
 
-    public record DailyLimitUpdateRequest(BigDecimal withdrawalLimit,
-                                          BigDecimal transferLimit) {
+    public record DailyLimitUpdateRequest(
+            @Schema(minimum = "1000.0000", maximum = "3000.0000", multipleOf = 0.0001)
+            BigDecimal withdrawalLimit,
+            @Schema(minimum = "1000.0000", maximum = "3000.0000", multipleOf = 0.0001)
+            BigDecimal transferLimit) {
     }
 
     public record DailyLimitUpdateResponse(String accountNumber,

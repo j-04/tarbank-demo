@@ -66,7 +66,8 @@ public class RequestIdempotencyService {
                                                                                      .toMillis() + "ms'")
                          .executeUpdate();
             Instant now = Instant.now();
-            records.insertInProgress(actor.getId(), operation, scope, key, requestHash, now.plus(properties.retention()), now);
+            records.insertInProgress(actor.getId(), operation, scope, key, requestHash,
+                                     now.plus(properties.retention()), now);
             var record = records.findForUpdate(actor.getId(), operation, scope, key)
                                 .orElseThrow(this::inProgress);
             if (!matches(record.getRequestHash(), requestHash)) {

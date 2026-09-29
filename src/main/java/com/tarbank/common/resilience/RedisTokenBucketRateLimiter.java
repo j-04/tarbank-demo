@@ -1,8 +1,8 @@
 package com.tarbank.common.resilience;
 
 import com.tarbank.common.config.RateLimitProperties.Policy;
-import com.tarbank.common.http.DependencyUnavailableException;
 import com.tarbank.common.http.CorrelationIdContext;
+import com.tarbank.common.http.DependencyUnavailableException;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import org.springframework.dao.DataAccessException;
@@ -45,7 +45,9 @@ public class RedisTokenBucketRateLimiter {
             """;
 
     private final StringRedisTemplate redis;
+
     private final ObservationRegistry observations;
+
     private final DefaultRedisScript<List> script = new DefaultRedisScript<>(SCRIPT, List.class);
 
     public RedisTokenBucketRateLimiter(StringRedisTemplate redis,
@@ -54,19 +56,23 @@ public class RedisTokenBucketRateLimiter {
         this.observations = observations;
     }
 
-    public Decision consume(String group, String identifier, Policy policy) {
+    public Decision consume(String group,
+                            String identifier,
+                            Policy policy) {
         String key = "rate-limit:" + group + ":" + sha256(identifier);
         Observation observation = Observation.createNotStarted("tarbank.redis", observations)
                                              .lowCardinalityKeyValue("operation", "rate_limit");
         if (CorrelationIdContext.current() != null) {
-            observation.highCardinalityKeyValue(
-                    "correlation.id", CorrelationIdContext.current().toString());
+            observation.highCardinalityKeyValue("correlation.id", CorrelationIdContext.current()
+                                                                                      .toString());
         }
         try {
-            List<?> result = observation.observe(() -> redis.execute(
-                    script, List.of(key), Integer.toString(policy.capacity()),
-                    Double.toString(policy.refillTokensPerSecond())));
-            if (result == null || result.size() != 2) throw new DependencyUnavailableException();
+            List<?> result = observation.observe(
+                    () -> redis.execute(script, List.of(key), Integer.toString(policy.capacity()),
+                                        Double.toString(policy.refillTokensPerSecond())));
+            if (result == null || result.size() != 2) {
+                throw new DependencyUnavailableException();
+            }
             boolean allowed = ((Number) result.getFirst()).longValue() == 1;
             long retryMillis = ((Number) result.get(1)).longValue();
             return new Decision(allowed, allowed ? 0 : Math.max(1, (retryMillis + 999) / 1000));
@@ -79,7 +85,8 @@ public class RedisTokenBucketRateLimiter {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                                          .digest(value.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
+            return HexFormat.of()
+                            .formatHex(digest);
         } catch (Exception exception) {
             throw new IllegalStateException("Rate-limit key hashing is unavailable.", exception);
         }

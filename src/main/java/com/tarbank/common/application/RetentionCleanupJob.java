@@ -12,7 +12,9 @@ class RetentionCleanupJob {
     private static final Logger LOGGER = LogManager.getLogger(RetentionCleanupJob.class);
 
     private final CleanupProperties properties;
+
     private final RetentionCleanupService cleanup;
+
     private final OperationalMetrics metrics;
 
     RetentionCleanupJob(CleanupProperties properties,
@@ -25,15 +27,19 @@ class RetentionCleanupJob {
 
     @Scheduled(cron = "${tarbank.cleanup.cron:0 0 * * * *}", zone = "UTC")
     void run() {
-        if (!properties.enabled()) return;
+        if (!properties.enabled()) {
+            return;
+        }
         try {
             RetentionCleanupService.CleanupResult result = cleanup.cleanup();
-            LOGGER.info("Retention cleanup completed lockAcquired={} overrides={} moneyIdempotency={} apiIdempotency={} dailyUsage={}",
-                        result.lockAcquired(), result.overrides(), result.moneyIdempotency(),
-                        result.apiIdempotency(), result.dailyUsage());
+            LOGGER.info(
+                    "Retention cleanup completed lockAcquired={} overrides={} moneyIdempotency={} apiIdempotency={} dailyUsage={}",
+                    result.lockAcquired(), result.overrides(), result.moneyIdempotency(), result.apiIdempotency(),
+                    result.dailyUsage());
         } catch (Exception exception) {
             metrics.cleanupFailed();
-            LOGGER.error("Retention cleanup failed exceptionType={}", exception.getClass().getName());
+            LOGGER.error("Retention cleanup failed exceptionType={}", exception.getClass()
+                                                                               .getName());
         }
     }
 }

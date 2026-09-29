@@ -65,7 +65,10 @@ public class JwtService {
                        .getEpochSecond() >= exp) {
                 throw new IllegalArgumentException();
             }
-            return new TarbankPrincipal(Long.valueOf(String.valueOf(c.get("sub"))), Role.valueOf(String.valueOf(c.get("role"))), UUID.fromString(String.valueOf(c.get("jti"))), number(c.get("credentialVersion")).intValue(), Instant.ofEpochSecond(exp));
+            return new TarbankPrincipal(Long.valueOf(String.valueOf(c.get("sub"))),
+                                        Role.valueOf(String.valueOf(c.get("role"))),
+                                        UUID.fromString(String.valueOf(c.get("jti"))),
+                                        number(c.get("credentialVersion")).intValue(), Instant.ofEpochSecond(exp));
         } catch (Exception ex) {
             throw new IllegalArgumentException("Invalid access token.");
         }

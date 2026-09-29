@@ -14,7 +14,8 @@ class LoggingNotificationService implements NotificationService {
     @Override
     public void send(Outcome outcome) {
         try (CloseableThreadContext.Instance ignored = CloseableThreadContext.putAll(Map.of(
-                "operationType", outcome.type().name(),
+                "operationType", outcome.type()
+                                        .name(),
                 "outcome", "notification_sent"))) {
             LOGGER.info("Money operation notification status={} failureCode={}",
                         outcome.status(), outcome.failureCode());

@@ -2,7 +2,8 @@
 <Configuration status="WARN">
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
-            <PatternLayout pattern='{"timestamp":"%d{ISO8601}","level":"%p","correlationId":"%enc{%X{correlationId}}{JSON}","internalCode":"%enc{%X{internalCode}}{JSON}","publicErrorCode":"%enc{%X{publicErrorCode}}{JSON}","httpStatus":"%enc{%X{httpStatus}}{JSON}","operationType":"%enc{%X{operationType}}{JSON}","outcome":"%enc{%X{outcome}}{JSON}","logger":"%enc{%c{1}}{JSON}","message":"%enc{%m}{JSON}"}%n'/>
+            <PatternLayout
+                    pattern='{"timestamp":"%d{ISO8601}","level":"%p","correlationId":"%enc{%X{correlationId}}{JSON}","internalCode":"%enc{%X{internalCode}}{JSON}","publicErrorCode":"%enc{%X{publicErrorCode}}{JSON}","httpStatus":"%enc{%X{httpStatus}}{JSON}","operationType":"%enc{%X{operationType}}{JSON}","outcome":"%enc{%X{outcome}}{JSON}","logger":"%enc{%c{1}}{JSON}","message":"%enc{%m}{JSON}"}%n'/>
         </Console>
     </Appenders>
     <Loggers>

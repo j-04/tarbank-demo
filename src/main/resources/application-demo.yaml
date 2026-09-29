@@ -5,5 +5,5 @@ spring:
 
 tarbank:
   failure-simulator:
-    enabled: true
-    failure-rate: 0.15
+    enabled: ${TARBANK_FAILURE_SIMULATOR_ENABLED:true}
+    failure-rate: ${TARBANK_FAILURE_SIMULATOR_FAILURE_RATE:0.15}

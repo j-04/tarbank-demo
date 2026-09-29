@@ -14,8 +14,11 @@ import java.time.ZoneOffset;
 @Service
 public class RetentionCleanupService {
     private final CleanupProperties properties;
+
     private final MaintenanceRepository maintenance;
+
     private final OperationalMetrics metrics;
+
     private final Clock clock;
 
     public RetentionCleanupService(CleanupProperties properties,

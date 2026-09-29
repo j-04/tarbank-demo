@@ -66,7 +66,7 @@ This phase creates a reproducible, containerized application shell. It deliberat
 - [x] docker compose up starts the service, PostgreSQL, and Redis.
 - [x] The liveness and readiness endpoints report healthy after startup.
 - [x] No real secret is present in tracked files.
-- [ ] Commit the completed checkpoint with a message such as bootstrap application and compose runtime.
+- [x] Commit the completed checkpoint with a message such as bootstrap application and compose runtime.
 
 ## 2. Establish database migrations and test infrastructure
 
@@ -113,7 +113,7 @@ This phase makes PostgreSQL schema evolution repeatable before any banking table
 - [x] The Testcontainers integration test creates a fresh PostgreSQL database, applies the full migration set, and uses isolated Redis state.
 - [x] Re-running the application against the same database is safe and does not change applied migrations.
 - [x] No H2-specific configuration or test assumptions are present.
-- [ ] Commit the completed checkpoint with a message such as establish Liquibase migration baseline.
+- [x] Commit the completed checkpoint with a message such as establish Liquibase migration baseline.
 
 ## 3. Implement identity, authentication, and customer creation
 
@@ -173,23 +173,23 @@ This is the first protected vertical slice. It creates the identity schema, star
 
 ### 3.6 Test the protected vertical slice
 
-- [ ] Add integration tests for startup manager seeding and safe repeated application startup.
-- [ ] Test successful login, invalid credentials, expired, invalidated, or credential-version-mismatched JWTs, and rejection of blocked or deactivated principals where applicable.
-- [ ] Test that a manager can create and retrieve a customer and that a customer cannot use manager endpoints.
-- [ ] Test validation failures for underage customers, duplicate username, duplicate normalized identity document, invalid phone number, document expiry, password, and timezone.
-- [ ] Test customer-creation idempotency: completed replay, conflicting reuse, and concurrent in-progress behavior.
-- [ ] Assert that API responses and captured logs omit credentials and identity-document secrets.
-- [ ] Test that onboarding creates the customer and its audit event atomically.
+- [x] Add integration tests for startup manager seeding and safe repeated application startup.
+- [x] Test successful login, invalid credentials, expired, invalidated, or credential-version-mismatched JWTs, and rejection of blocked or deactivated principals where applicable.
+- [x] Test that a manager can create and retrieve a customer and that a customer cannot use manager endpoints.
+- [x] Test validation failures for underage customers, duplicate username, duplicate normalized identity document, invalid phone number, document expiry, password, and timezone.
+- [x] Test customer-creation idempotency: completed replay, conflicting reuse, and concurrent in-progress behavior.
+- [x] Assert that API responses and captured logs omit credentials and identity-document secrets.
+- [x] Test that onboarding creates the customer and its audit event atomically.
 
 ### Completion checklist
 
-- [ ] Liquibase creates the identity, audit, and generic idempotency schema on a fresh PostgreSQL database.
-- [ ] Configured manager accounts are seeded once, stored with BCrypt password hashes, and can log in.
-- [ ] Login returns a valid JWT for an ACTIVE user; logout invalidates that token until its natural expiration.
-- [ ] An active manager can create and retrieve an eligible customer through the documented API contract.
-- [ ] Customer responses and logs contain no passwords or identity-document secrets.
-- [ ] Customer creation is atomic, audited, and safely idempotent.
-- [ ] Commit the completed checkpoint with a message such as implement identity and customer onboarding.
+- [x] Liquibase creates the identity, audit, and generic idempotency schema on a fresh PostgreSQL database.
+- [x] Configured manager accounts are seeded once, stored with BCrypt password hashes, and can log in.
+- [x] Login returns a valid JWT for an ACTIVE user; logout invalidates that token until its natural expiration.
+- [x] An active manager can create and retrieve an eligible customer through the documented API contract.
+- [x] Customer responses and logs contain no passwords or identity-document secrets.
+- [x] Customer creation is atomic, audited, and safely idempotent.
+- [x] Commit the completed checkpoint with a message such as implement identity and customer onboarding.
 
 ## 4. Complete customer lifecycle management
 
@@ -424,7 +424,7 @@ This is the highest-risk implementation phase. It delivers correctly persisted s
 - [x] Every failed business operation retains a FAILED transaction and audit record without entries, balance movement, or daily-limit usage.
 - [x] Explicit database locks prevent the basic balance and daily-limit races; phase 7 proves this under contention.
 - [x] The money service exposes no customer-visible notification, history, temporary-override, or rate-limiting feature yet.
-- [ ] Commit the completed checkpoint with a message such as implement atomic money operations.
+- [x] Commit the completed checkpoint with a message such as implement atomic money operations.
 
 ## 7. Prove concurrency, idempotency, and persistence safety
 
@@ -490,7 +490,7 @@ This phase verifies the money-operation core against real PostgreSQL behavior. I
 - [x] Financial idempotency returns exactly one durable outcome for a matching request key.
 - [x] Reconciliation proves every stored account balance matches its immutable entry history after successful, failed, and concurrent operations.
 - [x] Transaction rollback leaves no partial money state.
-- [ ] Commit the completed checkpoint with a message such as verify money-operation concurrency.
+- [x] Commit the completed checkpoint with a message such as verify money-operation concurrency.
 
 ## 8. Complete daily-limit configuration and account history
 
@@ -558,12 +558,12 @@ This phase adds same-day limit increases on top of the default-limit and daily-u
 
 ### Completion checklist
 
-- [ ] Customers and managers can raise a current-day withdrawal or transfer limit only within the documented range.
-- [ ] Effective limits honor customer timezones, expire without a midnight reset job, and remain correct under concurrent money operations.
-- [ ] Limit updates are ETag-protected, idempotent, atomic, and audited.
-- [ ] Account history is authorized, indexed, newest-first, cursor-stable, and built only from immutable entries.
-- [ ] No cleanup job deletes an override, idempotency record, usage aggregate, transaction, entry, or audit event in this phase.
-- [ ] Commit the completed checkpoint with a message such as implement limits and account history.
+- [x] Customers and managers can raise a current-day withdrawal or transfer limit only within the documented range.
+- [x] Effective limits honor customer timezones, expire without a midnight reset job, and remain correct under concurrent money operations.
+- [x] Limit updates are ETag-protected, idempotent, atomic, and audited.
+- [x] Account history is authorized, indexed, newest-first, cursor-stable, and built only from immutable entries.
+- [x] No cleanup job deletes an override, idempotency record, usage aggregate, transaction, entry, or audit event in this phase.
+- [x] Commit the completed checkpoint with a message such as implement limits and account history.
 
 ## 9. Add demo resilience, protection, and observability
 
@@ -642,7 +642,7 @@ This phase adds the reliability and operability behavior required by the demo wi
 - [x] Expired short-lived records are cleaned safely; immutable financial and audit history is retained.
 - [x] Redis rate limits basic abuse without weakening security when Redis is unavailable.
 - [x] The service has safe logs, metrics, traces, liveness, readiness, and dependency-failure behavior without requiring an external observability stack.
-- [ ] Commit the completed checkpoint with a message such as add resilience and observability.
+- [x] Commit the completed checkpoint with a message such as add resilience and observability.
 
 ## 10. Prepare the demo for review
 
@@ -650,72 +650,72 @@ This final phase turns the implementation into a reproducible interview-demo han
 
 ### 10.1 Establish final automated verification gates
 
-- [ ] Run the complete unit and integration-test suite from a clean checkout with the failure simulator disabled by default.
-- [ ] Require Testcontainers integration tests to apply Liquibase migrations to fresh PostgreSQL and exercise authorization, lifecycle, idempotency, money locking, limits, history, cleanup, rate limiting, and failure-simulator behavior.
-- [ ] Run the reconciliation query after the representative integration scenarios and fail the build if any stored account balance differs from the sum of immutable entry deltas.
-- [ ] Validate the migration changelog, application configuration binding, and Docker Compose configuration as part of the repeatable verification commands.
-- [ ] Keep test data isolated from local demo data. Tests must not depend on an already-running Compose database or Redis instance.
-- [ ] Record a short command sequence in the README so a reviewer can run all checks without guessing the profile, prerequisites, or order.
+- [x] Run the complete unit and integration-test suite from a clean checkout with the failure simulator disabled by default.
+- [x] Require Testcontainers integration tests to apply Liquibase migrations to fresh PostgreSQL and exercise authorization, lifecycle, idempotency, money locking, limits, history, cleanup, rate limiting, and failure-simulator behavior.
+- [x] Run the reconciliation query after the representative integration scenarios and fail the build if any stored account balance differs from the sum of immutable entry deltas.
+- [x] Validate the migration changelog, application configuration binding, and Docker Compose configuration as part of the repeatable verification commands.
+- [x] Keep test data isolated from local demo data. Tests must not depend on an already-running Compose database or Redis instance.
+- [x] Record a short command sequence in the README so a reviewer can run all checks without guessing the profile, prerequisites, or order.
 
 ### 10.2 Complete API documentation and examples
 
-- [ ] Generate and expose Swagger OpenAPI documentation from the implemented REST endpoints.
-- [ ] Verify that OpenAPI paths, headers, request bodies, success responses, error envelopes, status codes, and field constraints match REQUIREMENTS.md and DESIGN.md.
-- [ ] Document bearer-token authentication, X-Correlation-Id behavior, ETag retrieval and If-Match use, and Idempotency-Key UUID v4 use.
-- [ ] Include a clear retry example: generate a fresh UUID v4 for a new sensitive operation and reuse the exact same value only to retry that operation.
-- [ ] For Postman, document the built-in GUID variable or an equivalent UUID v4 generator; for Swagger UI, instruct the user to paste a generated UUID and retain it for a replay demonstration.
-- [ ] Provide safe sample requests for manager login, customer onboarding, account creation, customer login, deposit, withdrawal, transfer, limit increase, and history retrieval.
-- [ ] Keep API examples free of real credentials, secrets, document values, and personally identifying data.
+- [x] Generate and expose Swagger OpenAPI documentation from the implemented REST endpoints.
+- [x] Verify that OpenAPI paths, headers, request bodies, success responses, error envelopes, status codes, and field constraints match REQUIREMENTS.md and DESIGN.md.
+- [x] Document bearer-token authentication, X-Correlation-Id behavior, ETag retrieval and If-Match use, and Idempotency-Key UUID v4 use.
+- [x] Include a clear retry example: generate a fresh UUID v4 for a new sensitive operation and reuse the exact same value only to retry that operation.
+- [x] For Postman, document the built-in GUID variable or an equivalent UUID v4 generator; for Swagger UI, instruct the user to paste a generated UUID and retain it for a replay demonstration.
+- [x] Provide safe sample requests for manager login, customer onboarding, account creation, customer login, deposit, withdrawal, transfer, limit increase, and history retrieval.
+- [x] Keep API examples free of real credentials, secrets, document values, and personally identifying data.
 
 ### 10.3 Finalize the Docker image and Compose demo runtime
 
-- [ ] Verify the multi-stage Docker build uses pinned image versions and produces a runnable application image without build tooling or source files in the runtime layer.
-- [ ] Run the service as a non-root container user where the chosen base image supports it.
-- [ ] Verify Docker Compose starts only the application, PostgreSQL, and Redis required for the demo; do not add Prometheus, Grafana, Jaeger, Elasticsearch, or notification infrastructure.
-- [ ] Keep PostgreSQL on its named volume and keep PostgreSQL and Redis off host-public ports unless a local troubleshooting need is explicitly documented.
-- [ ] Supply configuration and secrets through environment variables or ignored local files. Keep .env.example limited to variable names and safe placeholders.
-- [ ] Verify startup ordering, health checks, Liquibase migration execution, readiness, and a clean shutdown followed by a restart with persisted PostgreSQL data.
-- [ ] Document the minimum prerequisites, image build command, Compose startup command, health URL, Swagger URL, logs command, and safe local-data reset procedure.
+- [x] Verify the multi-stage Docker build uses pinned image versions and produces a runnable application image without build tooling or source files in the runtime layer.
+- [x] Run the service as a non-root container user where the chosen base image supports it.
+- [x] Verify Docker Compose starts only the application, PostgreSQL, and Redis required for the demo; do not add Prometheus, Grafana, Jaeger, Elasticsearch, or notification infrastructure.
+- [x] Keep PostgreSQL on its named volume and keep PostgreSQL and Redis off host-public ports unless a local troubleshooting need is explicitly documented.
+- [x] Supply configuration and secrets through environment variables or ignored local files. Keep .env.example limited to variable names and safe placeholders.
+- [x] Verify startup ordering, health checks, Liquibase migration execution, readiness, and a clean shutdown followed by a restart with persisted PostgreSQL data.
+- [x] Document the minimum prerequisites, image build command, Compose startup command, health URL, Swagger URL, logs command, and safe local-data reset procedure.
 
 ### 10.4 Run the reproducible load test
 
-- [ ] Choose one versioned load-test runner and document it. For this demo, a small k6 scenario run from a pinned container image is sufficient and avoids adding a monitoring stack.
-- [ ] Seed a known manager, active customers, and active EUR and USD zero-balance accounts, then fund the load-test accounts through simulated deposits or matching funding transactions and entries so reconciliation remains valid.
-- [ ] Disable the failure simulator for the load test and use a rate-limit configuration that permits the controlled test workload without changing business behavior.
-- [ ] Generate unique idempotency keys for each new money operation; reuse a key only in an explicit replay case.
-- [ ] Exercise 50 concurrent requests across login, account list and detail reads, paginated history reads, deposits, withdrawals, and same-currency transfers.
-- [ ] Give money operations isolated or carefully funded source accounts so expected business failures do not dominate the result.
-- [ ] Include a warm-up period and enough successful samples to calculate meaningful p50, p95, p99, throughput, and error-rate values.
-- [ ] Report latency per endpoint group, including paginated history, rather than hiding a slow endpoint in a blended aggregate.
-- [ ] Require p99 below one second for the documented standard endpoint workload and record any expected or unexpected error rate separately.
-- [ ] Capture the application image tag or Git commit, Java version, Docker resources, PostgreSQL and Redis versions, load-test command, configuration relevant to the test, and result timestamp with the result.
+- [x] Choose one versioned load-test runner and document it. For this demo, a small k6 scenario run from a pinned container image is sufficient and avoids adding a monitoring stack.
+- [x] Seed a known manager, active customers, and active EUR and USD zero-balance accounts, then fund the load-test accounts through simulated deposits or matching funding transactions and entries so reconciliation remains valid.
+- [x] Disable the failure simulator for the load test and use a rate-limit configuration that permits the controlled test workload without changing business behavior.
+- [x] Generate unique idempotency keys for each new money operation; reuse a key only in an explicit replay case.
+- [x] Exercise 50 concurrent requests across login, account list and detail reads, paginated history reads, deposits, withdrawals, and same-currency transfers.
+- [x] Give money operations isolated or carefully funded source accounts so expected business failures do not dominate the result.
+- [x] Include a warm-up period and enough successful samples to calculate meaningful p50, p95, p99, throughput, and error-rate values.
+- [x] Report latency per endpoint group, including paginated history, rather than hiding a slow endpoint in a blended aggregate.
+- [x] Require p99 below one second for the documented standard endpoint workload and record any expected or unexpected error rate separately.
+- [x] Capture the application image tag or Git commit, Java version, Docker resources, PostgreSQL and Redis versions, load-test command, configuration relevant to the test, and result timestamp with the result.
 
 ### 10.5 Perform the review walkthrough
 
-- [ ] Start the stack from a documented clean state and confirm liveness, readiness, metrics, and Swagger availability.
-- [ ] Demonstrate manager login, customer creation, customer retrieval, account creation, customer login, and account ownership enforcement.
-- [ ] Demonstrate a successful deposit, withdrawal, and transfer, then retrieve the affected account histories.
-- [ ] Demonstrate duplicate money-request replay with the same Idempotency-Key and conflicting reuse with changed input.
-- [ ] Demonstrate an ETag-protected customer or account update and a stale-ETag rejection.
-- [ ] Demonstrate a daily-limit increase and a rejected operation that exceeds the remaining limit.
-- [ ] Demonstrate a blocked customer or account rejecting a new protected or money request.
-- [ ] Demonstrate one controlled failure-simulator case and its expected rollback or post-commit replay behavior.
-- [ ] Show structured logs, one metric view, and trace output by correlation ID without exposing sensitive data.
+- [x] Start the stack from a documented clean state and confirm liveness, readiness, metrics, and Swagger availability.
+- [x] Demonstrate manager login, customer creation, customer retrieval, account creation, customer login, and account ownership enforcement.
+- [x] Demonstrate a successful deposit, withdrawal, and transfer, then retrieve the affected account histories.
+- [x] Demonstrate duplicate money-request replay with the same Idempotency-Key and conflicting reuse with changed input.
+- [x] Demonstrate an ETag-protected customer or account update and a stale-ETag rejection.
+- [x] Demonstrate a daily-limit increase and a rejected operation that exceeds the remaining limit.
+- [x] Demonstrate a blocked customer or account rejecting a new protected or money request.
+- [x] Demonstrate one controlled failure-simulator case and its expected rollback or post-commit replay behavior.
+- [x] Show structured logs, one metric view, and trace output by correlation ID without exposing sensitive data.
 
 ### 10.6 Conduct the final scope and security review
 
-- [ ] Compare the implementation, OpenAPI contract, Docker configuration, and tests against every requirement and design decision.
-- [ ] Confirm all deliberate non-goals remain absent: payment networks, cash systems, FX conversion, fees, interest, overdrafts, settlement states, full double-entry ledger, customer self-service profile management, and durable notification delivery.
-- [ ] Scan tracked configuration, Docker files, test fixtures, logs, and generated API examples for passwords, JWTs, signing keys, database credentials, document values, document hashes, and encryption keys.
-- [ ] Confirm internal management endpoints and dependency diagnostics do not leak sensitive configuration.
-- [ ] Confirm no migration mutates prior applied changesets and no running profile enables Hibernate schema creation or update.
-- [ ] Review Git status and commit only intended source, configuration templates, documentation, and test artifacts. Do not commit local volumes, environment files with secrets, load-test raw data containing sensitive values, or build outputs.
+- [x] Compare the implementation, OpenAPI contract, Docker configuration, and tests against every requirement and design decision.
+- [x] Confirm all deliberate non-goals remain absent: payment networks, cash systems, FX conversion, fees, interest, overdrafts, settlement states, full double-entry ledger, customer self-service profile management, and durable notification delivery.
+- [x] Scan tracked configuration, Docker files, test fixtures, logs, and generated API examples for passwords, JWTs, signing keys, database credentials, document values, document hashes, and encryption keys.
+- [x] Confirm internal management endpoints and dependency diagnostics do not leak sensitive configuration.
+- [x] Confirm no migration mutates prior applied changesets and no running profile enables Hibernate schema creation or update.
+- [x] Review Git status and commit only intended source, configuration templates, documentation, and test artifacts. Do not commit local volumes, environment files with secrets, load-test raw data containing sensitive values, or build outputs.
 
 ### Completion checklist
 
-- [ ] A reviewer can clone the repository, set local configuration, build the Docker image, start the stack, and reach readiness and Swagger using the README alone.
-- [ ] The complete automated suite passes against fresh PostgreSQL through Testcontainers.
-- [ ] The manual walkthrough demonstrates the core roles, money safety, idempotency, limits, history, auditing, and failure behavior.
-- [ ] A dated, reproducible 50-concurrent-request result documents p99 latency below one second for the defined workload.
-- [ ] The final repository contains no secrets and implements only the agreed demo scope.
-- [ ] Commit the completed checkpoint with a message such as prepare demo for review.
+- [x] A reviewer can clone the repository, set local configuration, build the Docker image, start the stack, and reach readiness and Swagger using the README alone.
+- [x] The complete automated suite passes against fresh PostgreSQL through Testcontainers.
+- [x] The manual walkthrough demonstrates the core roles, money safety, idempotency, limits, history, auditing, and failure behavior.
+- [x] A dated, reproducible 50-concurrent-request result documents p99 latency below one second for the defined workload.
+- [x] The final repository contains no secrets and implements only the agreed demo scope.
+- [x] Commit the completed checkpoint with a message such as prepare demo for review.

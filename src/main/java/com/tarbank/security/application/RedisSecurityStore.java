@@ -12,6 +12,7 @@ import java.util.UUID;
 @Component
 public class RedisSecurityStore {
     private final StringRedisTemplate redis;
+
     private final ObservationRegistry observations;
 
     public RedisSecurityStore(StringRedisTemplate redis,
@@ -25,19 +26,23 @@ public class RedisSecurityStore {
                 redis.hasKey("jwt:invalidated:" + tokenId)));
     }
 
-    public void invalidate(UUID tokenId, Duration remaining) {
+    public void invalidate(UUID tokenId,
+                           Duration remaining) {
         observe("token_invalidation", () -> {
-            redis.opsForValue().set("jwt:invalidated:" + tokenId, "1", remaining);
+            redis.opsForValue()
+                 .set("jwt:invalidated:" + tokenId, "1", remaining);
             return null;
         });
     }
 
-    private <T> T observe(String operation, java.util.function.Supplier<T> action) {
+    private <T> T observe(String operation,
+                          java.util.function.Supplier<T> action) {
         Observation observation = Observation.createNotStarted("tarbank.redis", observations)
                                              .lowCardinalityKeyValue("operation", operation);
         if (CorrelationIdContext.current() != null) {
             observation.highCardinalityKeyValue(
-                    "correlation.id", CorrelationIdContext.current().toString());
+                    "correlation.id", CorrelationIdContext.current()
+                                                          .toString());
         }
         return observation.observe(action);
     }

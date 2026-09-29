@@ -17,34 +17,43 @@ class DependencyHealthConfiguration {
 
     @Bean
     HealthIndicator tarbankPostgresHealthIndicator(DataSource dataSource,
-                                                    OperationalMetrics metrics) {
+                                                   OperationalMetrics metrics) {
         return () -> {
             try (var connection = dataSource.getConnection()) {
                 boolean available = connection.isValid(2);
                 metrics.dependency("postgres", available);
-                return available ? Health.up().build() : Health.down().build();
+                return available ? Health.up()
+                                         .build() : Health.down()
+                                                          .build();
             } catch (Exception exception) {
                 metrics.dependency("postgres", false);
                 LOGGER.warn("PostgreSQL health check failed exceptionType={}",
-                            exception.getClass().getName());
-                return Health.down().build();
+                            exception.getClass()
+                                     .getName());
+                return Health.down()
+                             .build();
             }
         };
     }
 
     @Bean
     HealthIndicator tarbankRedisHealthIndicator(StringRedisTemplate redis,
-                                                 OperationalMetrics metrics) {
+                                                OperationalMetrics metrics) {
         return () -> {
-            try (var connection = redis.getConnectionFactory().getConnection()) {
+            try (var connection = redis.getConnectionFactory()
+                                       .getConnection()) {
                 boolean available = "PONG".equals(connection.ping());
                 metrics.dependency("redis", available);
-                return available ? Health.up().build() : Health.down().build();
+                return available ? Health.up()
+                                         .build() : Health.down()
+                                                          .build();
             } catch (Exception exception) {
                 metrics.dependency("redis", false);
                 LOGGER.warn("Redis health check failed exceptionType={}",
-                            exception.getClass().getName());
-                return Health.down().build();
+                            exception.getClass()
+                                     .getName());
+                return Health.down()
+                             .build();
             }
         };
     }

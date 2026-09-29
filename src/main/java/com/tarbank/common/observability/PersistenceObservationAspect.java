@@ -19,14 +19,18 @@ class PersistenceObservationAspect {
 
     @Around("execution(* com.tarbank..persistence..*(..))")
     Object observe(ProceedingJoinPoint invocation) throws Throwable {
-        String repository = invocation.getSignature().getDeclaringType().getSimpleName();
+        String repository = invocation.getSignature()
+                                      .getDeclaringType()
+                                      .getSimpleName();
         Observation observation = Observation.createNotStarted("tarbank.postgresql", observations)
                                              .lowCardinalityKeyValue("repository", repository)
                                              .lowCardinalityKeyValue(
-                                                     "operation", invocation.getSignature().getName());
+                                                     "operation", invocation.getSignature()
+                                                                            .getName());
         if (CorrelationIdContext.current() != null) {
             observation.highCardinalityKeyValue(
-                    "correlation.id", CorrelationIdContext.current().toString());
+                    "correlation.id", CorrelationIdContext.current()
+                                                          .toString());
         }
         observation.start();
         try (Observation.Scope ignored = observation.openScope()) {

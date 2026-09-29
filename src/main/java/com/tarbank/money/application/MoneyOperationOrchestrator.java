@@ -27,9 +27,13 @@ public class MoneyOperationOrchestrator {
     private static final Logger LOGGER = LogManager.getLogger(MoneyOperationOrchestrator.class);
 
     private final MoneyOperationService operations;
+
     private final FailureSimulator failures;
+
     private final RateLimitService rateLimits;
+
     private final OperationalMetrics metrics;
+
     private final ObservationRegistry observations;
 
     public MoneyOperationOrchestrator(MoneyOperationService operations,
@@ -94,7 +98,8 @@ public class MoneyOperationOrchestrator {
                                              .lowCardinalityKeyValue("operation.type", type.name());
         if (CorrelationIdContext.current() != null) {
             observation.highCardinalityKeyValue(
-                    "correlation.id", CorrelationIdContext.current().toString());
+                    "correlation.id", CorrelationIdContext.current()
+                                                          .toString());
         }
         observation.start();
         try (Observation.Scope ignored = observation.openScope()) {
@@ -127,7 +132,8 @@ public class MoneyOperationOrchestrator {
             if (exception == null) {
                 LOGGER.info("Money operation finished replayed={}", replayed);
             } else {
-                LOGGER.warn("Money operation failed exceptionType={}", exception.getClass().getName());
+                LOGGER.warn("Money operation failed exceptionType={}", exception.getClass()
+                                                                                .getName());
             }
         }
     }

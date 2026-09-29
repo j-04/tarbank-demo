@@ -83,12 +83,11 @@ public class AccountFeatureService {
         this.json = json;
     }
 
-    public RequestIdempotencyService.Result<StoredLimitUpdate> updateLimits(
-            String accountNumber,
-            int expectedVersion,
-            TarbankPrincipal principal,
-            UUID key,
-            DailyLimitUpdateRequest request) {
+    public RequestIdempotencyService.Result<StoredLimitUpdate> updateLimits(String accountNumber,
+                                                                            int expectedVersion,
+                                                                            TarbankPrincipal principal,
+                                                                            UUID key,
+                                                                            DailyLimitUpdateRequest request) {
         BigDecimal withdrawalInput = request.withdrawalLimit();
         BigDecimal transferInput = request.transferLimit();
         if (withdrawalInput == null && transferInput == null) {
@@ -103,13 +102,12 @@ public class AccountFeatureService {
         UserEntity actor = users.findById(principal.userId())
                                 .orElseThrow(this::accessDenied);
         String scope = "account:" + accountNumber;
-        String requestHash = sha256(LIMIT_UPDATE_OPERATION + "|" + scope + "|"
-                                            + value(withdrawal) + "|" + value(transfer));
-        return idempotency.execute(
-                actor, LIMIT_UPDATE_OPERATION, scope, key, requestHash,
-                StoredLimitUpdate.class, HttpStatus.OK.value(),
-                () -> updateLimitsFirst(accountNumber, expectedVersion, principal, actor,
-                                        withdrawal, transfer));
+        String requestHash = sha256(
+                LIMIT_UPDATE_OPERATION + "|" + scope + "|" + value(withdrawal) + "|" + value(transfer));
+        return idempotency.execute(actor, LIMIT_UPDATE_OPERATION, scope, key, requestHash, StoredLimitUpdate.class,
+                                   HttpStatus.OK.value(),
+                                   () -> updateLimitsFirst(accountNumber, expectedVersion, principal, actor, withdrawal,
+                                                           transfer));
     }
 
     private StoredLimitUpdate updateLimitsFirst(String accountNumber,
@@ -124,17 +122,16 @@ public class AccountFeatureService {
         requireVersion(account, expectedVersion);
         LimitWindow window = effectiveLimits.window(account.getCustomer()
                                                            .getTimezone());
-        EffectiveLimit currentWithdrawal = effectiveLimits.effectiveLimit(
-                account, LimitOperationType.WITHDRAWAL, window);
-        EffectiveLimit currentTransfer = effectiveLimits.effectiveLimit(
-                account, LimitOperationType.TRANSFER, window);
+        EffectiveLimit currentWithdrawal = effectiveLimits.effectiveLimit(account, LimitOperationType.WITHDRAWAL,
+                                                                          window);
+        EffectiveLimit currentTransfer = effectiveLimits.effectiveLimit(account, LimitOperationType.TRANSFER, window);
         rejectDecrease(requestedWithdrawal, currentWithdrawal.amount());
         rejectDecrease(requestedTransfer, currentTransfer.amount());
 
-        boolean withdrawalChanged = requestedWithdrawal != null
-                && requestedWithdrawal.compareTo(currentWithdrawal.amount()) > 0;
-        boolean transferChanged = requestedTransfer != null
-                && requestedTransfer.compareTo(currentTransfer.amount()) > 0;
+        boolean withdrawalChanged = requestedWithdrawal != null && requestedWithdrawal.compareTo(
+                currentWithdrawal.amount()) > 0;
+        boolean transferChanged = requestedTransfer != null && requestedTransfer.compareTo(
+                currentTransfer.amount()) > 0;
         if (withdrawalChanged) {
             saveOverride(account, LimitOperationType.WITHDRAWAL, requestedWithdrawal, actor, window);
         }
@@ -144,22 +141,19 @@ public class AccountFeatureService {
 
         BigDecimal withdrawal = withdrawalChanged ? requestedWithdrawal : currentWithdrawal.amount();
         BigDecimal transfer = transferChanged ? requestedTransfer : currentTransfer.amount();
-        Instant expiresAt = withdrawalChanged || transferChanged
-                ? window.expiresAt()
-                : expiration(currentWithdrawal, currentTransfer);
+        Instant expiresAt = withdrawalChanged || transferChanged ? window.expiresAt() : expiration(currentWithdrawal,
+                                                                                                   currentTransfer);
         if (withdrawalChanged || transferChanged) {
             account.markLimitsChanged(window.now());
-            audits.save(new AuditEventEntity(
-                    actor, "DAILY_LIMIT_UPDATED", "ACCOUNT", account.getAccountNumber(),
-                    CorrelationIdContext.current(), auditMetadata(
-                    currentWithdrawal.amount(), withdrawal,
-                    currentTransfer.amount(), transfer), window.now()));
+            audits.save(new AuditEventEntity(actor, "DAILY_LIMIT_UPDATED", "ACCOUNT", account.getAccountNumber(),
+                                             CorrelationIdContext.current(),
+                                             auditMetadata(currentWithdrawal.amount(), withdrawal,
+                                                           currentTransfer.amount(), transfer), window.now()));
             accounts.flush();
         }
-        DailyLimitUpdateResponse response = new DailyLimitUpdateResponse(
-                account.getAccountNumber(), amount(withdrawal), amount(transfer), expiresAt);
-        return new StoredLimitUpdate(
-                response, account.getManagementVersion(), window.effectiveDate());
+        DailyLimitUpdateResponse response = new DailyLimitUpdateResponse(account.getAccountNumber(), amount(withdrawal),
+                                                                         amount(transfer), expiresAt);
+        return new StoredLimitUpdate(response, account.getManagementVersion(), window.effectiveDate());
     }
 
     private void saveOverride(AccountEntity account,
@@ -167,11 +161,13 @@ public class AccountFeatureService {
                               BigDecimal amount,
                               UserEntity actor,
                               LimitWindow window) {
-        AccountLimitOverrideEntity override = queries.findOverride(
-                                                             account.getId(), operation, window.effectiveDate())
-                                                     .orElseGet(() -> new AccountLimitOverrideEntity(
-                                                             account, operation, amount, window.effectiveDate(),
-                                                             window.expiresAt(), actor, window.now()));
+        AccountLimitOverrideEntity override = queries.findOverride(account.getId(), operation, window.effectiveDate())
+                                                     .orElseGet(() -> new AccountLimitOverrideEntity(account, operation,
+                                                                                                     amount,
+                                                                                                     window.effectiveDate(),
+                                                                                                     window.expiresAt(),
+                                                                                                     actor,
+                                                                                                     window.now()));
         if (override.getLimitAmount()
                     .compareTo(amount) != 0) {
             override.increaseTo(amount, window.expiresAt(), actor, window.now());
@@ -199,26 +195,22 @@ public class AccountFeatureService {
         List<TransactionHistoryItem> items = selected.stream()
                                                      .map(this::historyItem)
                                                      .toList();
-        String nextCursor = hasNext
-                ? encodeCursor(accountNumber, from, to, selected.getLast())
-                : null;
+        String nextCursor = hasNext ? encodeCursor(accountNumber, from, to, selected.getLast()) : null;
         return new TransactionHistoryPage(items, nextCursor);
     }
 
     private TransactionHistoryItem historyItem(HistoryRow row) {
-        return new TransactionHistoryItem(
-                row.transactionId(), row.type(), row.status(), amount(row.amountDelta()),
-                amount(row.balanceAfter()), row.currency(), row.createdAt());
+        return new TransactionHistoryItem(row.transactionId(), row.type(), row.status(), amount(row.amountDelta()),
+                                          amount(row.balanceAfter()), row.currency(), row.createdAt());
     }
 
     private String encodeCursor(String accountNumber,
                                 Instant from,
                                 Instant to,
                                 HistoryRow row) {
-        String value = String.join("|", "v1", accountNumber, instant(from), instant(to),
-                                   row.createdAt()
-                                      .toString(), row.entryId()
-                                                      .toString());
+        String value = String.join("|", "v1", accountNumber, instant(from), instant(to), row.createdAt()
+                                                                                            .toString(), row.entryId()
+                                                                                                            .toString());
         return Base64.getUrlEncoder()
                      .withoutPadding()
                      .encodeToString(value.getBytes(StandardCharsets.UTF_8));
@@ -235,10 +227,8 @@ public class AccountFeatureService {
             String decoded = new String(Base64.getUrlDecoder()
                                               .decode(cursor), StandardCharsets.UTF_8);
             String[] fields = decoded.split("\\|", -1);
-            if (fields.length != 6 || !fields[0].equals("v1")
-                    || !fields[1].equals(accountNumber)
-                    || !fields[2].equals(instant(from))
-                    || !fields[3].equals(instant(to))) {
+            if (fields.length != 6 || !fields[0].equals("v1") || !fields[1].equals(accountNumber) || !fields[2].equals(
+                    instant(from)) || !fields[3].equals(instant(to))) {
                 throw new IllegalArgumentException();
             }
             return new HistoryPosition(Instant.parse(fields[4]), Long.valueOf(fields[5]));
@@ -255,10 +245,9 @@ public class AccountFeatureService {
         if (principal.role() == Role.MANAGER) {
             return;
         }
-        if (principal.role() != Role.CUSTOMER
-                || !account.getCustomer()
-                           .getUserId()
-                           .equals(principal.userId())) {
+        if (principal.role() != Role.CUSTOMER || !account.getCustomer()
+                                                         .getUserId()
+                                                         .equals(principal.userId())) {
             throw accessDenied();
         }
     }
@@ -282,8 +271,7 @@ public class AccountFeatureService {
     }
 
     private void validateAllowedRange(BigDecimal value) {
-        if (value != null && (value.compareTo(MINIMUM_LIMIT) < 0
-                || value.compareTo(MAXIMUM_LIMIT) > 0)) {
+        if (value != null && (value.compareTo(MINIMUM_LIMIT) < 0 || value.compareTo(MAXIMUM_LIMIT) > 0)) {
             throw limitOutOfRange();
         }
     }
@@ -297,8 +285,7 @@ public class AccountFeatureService {
 
     private ApiException limitOutOfRange() {
         return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "DAILY_LIMIT_OUT_OF_RANGE",
-                                "The requested daily limit is outside the permitted range.",
-                                "TAR-LIMIT-001");
+                                "The requested daily limit is outside the permitted range.", "TAR-LIMIT-001");
     }
 
     private Instant expiration(EffectiveLimit withdrawal,
@@ -325,9 +312,8 @@ public class AccountFeatureService {
     private String sha256(String value) {
         try {
             return HexFormat.of()
-                            .formatHex(
-                                    MessageDigest.getInstance("SHA-256")
-                                                 .digest(value.getBytes(StandardCharsets.UTF_8)));
+                            .formatHex(MessageDigest.getInstance("SHA-256")
+                                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) {
             throw new IllegalStateException("Daily-limit request fingerprinting failed.", exception);
         }
@@ -347,21 +333,18 @@ public class AccountFeatureService {
     }
 
     private ApiException validation() {
-        return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
-                                "The request is invalid.", "TAR-API-001");
+        return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "The request is invalid.", "TAR-API-001");
     }
 
     private ApiException notFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND",
-                                "Requested resource was not found.", "TAR-ACCOUNT-001");
+        return new ApiException(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Requested resource was not found.",
+                                "TAR-ACCOUNT-001");
     }
 
     private ApiException accessDenied() {
-        return new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED",
-                                "Access is denied.", "TAR-AUTH-002");
+        return new ApiException(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access is denied.", "TAR-AUTH-002");
     }
 
-    public record StoredLimitUpdate(DailyLimitUpdateResponse response, int version,
-                                    LocalDate effectiveDate) {
+    public record StoredLimitUpdate(DailyLimitUpdateResponse response, int version, LocalDate effectiveDate) {
     }
 }
