@@ -6,8 +6,8 @@ import com.tarbank.common.resilience.FailurePoint;
 import com.tarbank.common.resilience.FailureSimulator;
 import com.tarbank.common.resilience.FailureSimulator.Execution;
 import com.tarbank.common.resilience.RateLimitService;
-import com.tarbank.money.api.MoneyOperationController.AccountOperationResponse;
-import com.tarbank.money.api.MoneyOperationController.TransferResponse;
+import com.tarbank.money.api.MoneyOperationContracts.AccountOperationResponse;
+import com.tarbank.money.api.MoneyOperationContracts.TransferResponse;
 import com.tarbank.money.domain.TransactionType;
 import com.tarbank.security.application.TarbankPrincipal;
 import io.micrometer.observation.Observation;
@@ -96,9 +96,7 @@ public class MoneyOperationOrchestrator {
      * may fail the HTTP call but remain safely replayable with the same idempotency key.
      *
      * @param type operation type used for metrics and structured logging
-     * @param accountNumber source or target account used for failure-point selection
-     * @param principal authenticated customer initiating the request
-     * @param key idempotency key used to correlate a retry after an uncertain outcome
+     * @param failure selected failure-injection execution for this request
      * @param operation transactional operation to invoke once preconditions pass
      * @param <T> successful response body type
      * @return the transactional service result, including replay and business-failure metadata

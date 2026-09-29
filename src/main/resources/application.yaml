@@ -30,7 +30,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,metrics
+        include: health,metrics,prometheus
   endpoint:
     health:
       show-details: never
@@ -47,6 +47,10 @@ management:
         http.server.requests: true
       percentiles:
         http.server.requests: 0.99
+  prometheus:
+    metrics:
+      export:
+        enabled: ${TARBANK_PROMETHEUS_ENABLED:false}
   tracing:
     enabled: true
     sampling:

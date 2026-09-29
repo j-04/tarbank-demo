@@ -1,11 +1,11 @@
 package com.tarbank.account.api;
 
-import com.tarbank.account.api.AccountController.AccountCreatedResponse;
-import com.tarbank.account.api.AccountController.AccountPage;
-import com.tarbank.account.api.AccountController.CreateAccountRequest;
+import com.tarbank.account.api.AccountContracts.AccountCreatedResponse;
+import com.tarbank.account.api.AccountContracts.AccountPage;
+import com.tarbank.account.api.AccountContracts.CreateAccountRequest;
 import com.tarbank.account.application.AccountService;
 import com.tarbank.common.api.ApiSuccessResponse;
-import com.tarbank.common.http.ApiException;
+import com.tarbank.common.http.ApiRequestHeaders;
 import com.tarbank.common.http.CorrelationIdContext;
 import com.tarbank.security.application.TarbankPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,18 +25,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.UUID;
-import java.util.regex.Pattern;
-
 @RestController
 @RequestMapping(value = "/api/v1/customers/{customerId}/accounts",
         produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = "Manager account administration",
         description = "Manager-only account creation and customer account listing.")
 public class CustomerAccountController {
-    private static final Pattern UUID_V4 = Pattern.compile(
-            "(?i)^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
-
     private final AccountService accounts;
 
     public CustomerAccountController(AccountService accounts) {
@@ -56,7 +50,7 @@ public class CustomerAccountController {
             @AuthenticationPrincipal TarbankPrincipal principal,
             @RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody CreateAccountRequest request) {
-        var result = accounts.create(customerId, principal, parseKey(key), request);
+        var result = accounts.create(customerId, principal, ApiRequestHeaders.parseUuidV4(key), request);
         return ResponseEntity.status(result.status())
                              .body(new ApiSuccessResponse<>(result.body(), CorrelationIdContext.current()));
     }
@@ -76,20 +70,4 @@ public class CustomerAccountController {
                                         CorrelationIdContext.current());
     }
 
-    private UUID parseKey(String value) {
-        try {
-            if (value == null || !UUID_V4.matcher(value)
-                                         .matches()) {
-                throw new IllegalArgumentException();
-            }
-            UUID key = UUID.fromString(value);
-            if (key.version() != 4 || key.variant() != 2) {
-                throw new IllegalArgumentException();
-            }
-            return key;
-        } catch (Exception exception) {
-            throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
-                                   "The request is invalid.", "TAR-API-001");
-        }
-    }
 }

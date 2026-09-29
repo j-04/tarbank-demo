@@ -1,20 +1,27 @@
 package com.tarbank.customer;
 
+import com.tarbank.common.persistence.ApiRequestIdempotencyRepository;
 import com.tarbank.customer.persistence.CustomerRepository;
 import com.tarbank.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -31,6 +38,9 @@ class CustomerOnboardingIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @MockitoSpyBean
+    private ApiRequestIdempotencyRepository idempotencyRecords;
 
     @Test
     void seededManagerCanLoginAndLogout() throws Exception {
@@ -57,6 +67,36 @@ class CustomerOnboardingIntegrationTest extends AbstractIntegrationTest {
                    .doesNotContain("A1234567"));
         byte[] encrypted = jdbc.queryForObject("select document_number_encrypted from customers where user_id=?", byte[].class, id);
         assertThat(new String(encrypted, StandardCharsets.UTF_8)).doesNotContain("A1234567");
+    }
+
+    @Test
+    void rejectsUnsupportedRequestAndResponseMediaTypes() throws Exception {
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.TEXT_PLAIN)
+                                               .content("manager:TestPass123!"))
+           .andExpect(status().isUnsupportedMediaType());
+        mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                                               .accept(MediaType.APPLICATION_XML)
+                                               .content("{\"username\":\"manager\",\"password\":\"TestPass123!\"}"))
+           .andExpect(status().isNotAcceptable());
+    }
+
+    @Test
+    void dependencyFailureDuringIdempotencyReservationReturns503WithoutCreatingCustomer() throws Exception {
+        long customerCount = customers.count();
+        doThrow(new DataAccessResourceFailureException("database unavailable"))
+                .when(idempotencyRecords)
+                .insertInProgress(anyLong(), anyString(), anyString(), any(), anyString(), any(), any());
+
+        mvc.perform(post("/api/v1/customers").header("Authorization", "Bearer " + login())
+                                             .header("Idempotency-Key", UUID.randomUUID().toString())
+                                             .contentType(MediaType.APPLICATION_JSON)
+                                             .content(customer("dependency", "P1234567")))
+           .andExpect(status().isServiceUnavailable())
+           .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                   .contains("DEPENDENCY_UNAVAILABLE")
+                   .doesNotContain("database unavailable"));
+
+        assertThat(customers.count()).isEqualTo(customerCount);
     }
 
     @Test

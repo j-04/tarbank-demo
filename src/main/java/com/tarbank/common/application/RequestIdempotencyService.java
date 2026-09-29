@@ -7,7 +7,6 @@ import com.tarbank.common.persistence.ApiRequestIdempotencyRepository;
 import com.tarbank.security.domain.UserEntity;
 import jakarta.persistence.EntityManager;
 import org.springframework.dao.CannotAcquireLockException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -109,17 +108,30 @@ public class RequestIdempotencyService {
                 record.replaceRequestHash(requestHash, now);
             }
             if (record.getStatus() == IdempotencyStatus.COMPLETED) {
-                return new Result<>(json.readValue(record.getResponseBody(), type), record.getResponseStatus(), true);
+                return new Result<>(deserialize(record.getResponseBody(), type), record.getResponseStatus(), true);
             }
             T response = firstExecution.get();
-            record.complete(successStatus, json.writeValueAsString(response), Instant.now());
+            record.complete(successStatus, serialize(response), Instant.now());
             return new Result<>(response, successStatus, false);
-        } catch (ApiException | DataIntegrityViolationException exception) {
-            throw exception;
         } catch (CannotAcquireLockException exception) {
             throw inProgress();
+        }
+    }
+
+    private <T> T deserialize(String responseBody,
+                              Class<T> type) {
+        try {
+            return json.readValue(responseBody, type);
         } catch (Exception exception) {
-            throw new IllegalStateException("Idempotent request processing failed.", exception);
+            throw new IllegalStateException("Stored idempotency response is invalid.", exception);
+        }
+    }
+
+    private String serialize(Object response) {
+        try {
+            return json.writeValueAsString(response);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Idempotency response serialization failed.", exception);
         }
     }
 

@@ -4,8 +4,8 @@ import com.tarbank.common.http.ApiSecurityErrorWriter;
 import com.tarbank.common.http.AuthenticatedRateLimitFilter;
 import com.tarbank.common.resilience.RateLimitService;
 import com.tarbank.security.application.JwtAuthenticationFilter;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -22,12 +22,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 class BootstrapSecurityConfiguration {
     @Bean
     @Order(1)
-    SecurityFilterChain management(HttpSecurity http,
-                                   @Value("${management.server.port:8081}") int port) throws Exception {
-        return http.securityMatcher(r -> r.getLocalPort() == port)
+    SecurityFilterChain management(HttpSecurity http) throws Exception {
+        return http.securityMatcher(EndpointRequest.toAnyEndpoint())
                    .csrf(AbstractHttpConfigurer::disable)
                    .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                   .authorizeHttpRequests(a -> a.requestMatchers("/actuator/health/**", "/actuator/metrics/**")
+                   .authorizeHttpRequests(a -> a.requestMatchers("/actuator/health/**", "/actuator/metrics/**",
+                                                                 "/actuator/prometheus")
                                                 .permitAll()
                                                 .anyRequest()
                                                 .denyAll())

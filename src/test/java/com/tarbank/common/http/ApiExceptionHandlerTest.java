@@ -34,6 +34,24 @@ class ApiExceptionHandlerTest {
     }
 
     @Test
+    void unsupportedContentTypeMapsTo415() {
+        var response = handler.unsupportedMediaType();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error().code()).isEqualTo("UNSUPPORTED_MEDIA_TYPE");
+    }
+
+    @Test
+    void unsupportedAcceptTypeMapsTo406() {
+        var response = handler.notAcceptable();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_ACCEPTABLE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error().code()).isEqualTo("NOT_ACCEPTABLE");
+    }
+
+    @Test
     void simulatedFailureUsesExistingSafeInternalErrorWithoutInjectionDetails() {
         var response = handler.simulatedFailure(
                 new SimulatedFailureException(FailurePoint.DURING_TRANSACTION_BEFORE_COMMIT));

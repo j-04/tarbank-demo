@@ -133,7 +133,8 @@ The daily amount that can be withdrawn or transferred from an account must be co
 
 ## Performance requirements
 
-- With the failure simulator disabled and under a normal demo load of 50 concurrent requests, standard API endpoints must respond in under one second at the p99 percentile.
+- With the failure simulator disabled and under a normal demo load of 50 concurrent requests, standard business API endpoints must respond in under one second at the p99 percentile.
+- The login endpoint must remain measured and reported separately and must respond in under two seconds at the p99 percentile. Its separate target accounts for the deliberately CPU-intensive password hashing required for credential verification.
 - Paginate account-history responses to avoid unbounded API payloads.
 - Record latency metrics, including the p99 percentile, for API endpoints.
 

@@ -2,7 +2,7 @@
 
 Tarbank is a Java 25 and Spring Boot 4 banking-service demo. It provides manager-assisted customer and account administration, JWT-authenticated customer access, idempotent deposits, withdrawals and same-currency transfers, daily limits, immutable transaction history, auditing, Redis rate limiting, structured logs, metrics, traces, health probes, and controlled failure simulation.
 
-The supported local deployment is Docker Compose with exactly three services: the application, PostgreSQL, and Redis. PostgreSQL uses a named volume; PostgreSQL, Redis, and the management port are not published to the host.
+The supported local deployment is Docker Compose with exactly three services: the application, PostgreSQL, and Redis. PostgreSQL and Redis use named volumes; PostgreSQL, Redis, and the management port are not published to the host. The Redis volume preserves unexpired logout invalidations and rate-limit state when containers are recreated.
 
 ## Code guide for interviewers
 
@@ -85,6 +85,15 @@ Local URLs:
 
 Use `TARBANK_APP_PORT` in `.env` to change the host application port. HTTPS termination is required outside local development.
 
+Prometheus export is opt-in and remains available only from the loopback-bound management server. Enable it with `TARBANK_PROMETHEUS_ENABLED=true`, recreate the application container, and scrape it from the container network or through an approved internal collector:
+
+```bash
+TARBANK_PROMETHEUS_ENABLED=true docker compose up --detach --force-recreate app
+docker compose exec app wget -qO- http://127.0.0.1:8081/actuator/prometheus
+```
+
+Ordinary `docker compose down` preserves both named volumes. `docker compose down --volumes` intentionally destroys PostgreSQL data and Redis security state; after that reset, previously recorded logout invalidations no longer exist and all signing keys and demo data must be treated as a fresh environment.
+
 ## Automated verification
 
 The repeatable verification command runs unit and fresh Testcontainers integration tests, Liquibase migrations, configuration binding, reconciliation assertions, Docker Compose validation, and the Git whitespace check:
@@ -97,7 +106,7 @@ Tests use disposable PostgreSQL and Redis containers and never depend on Compose
 
 ## API conventions
 
-- All operations accept an optional `X-Correlation-Id` UUID. A valid supplied value is returned unchanged; otherwise the service generates one.
+- All operations accept an optional `X-Correlation-Id` UUID. The service generates one only when the header is absent; a malformed supplied value returns `400 VALIDATION_ERROR`.
 - Protected operations require `Authorization: Bearer <JWT>`.
 - Customer/account creation, password reset, daily-limit updates, and all money operations require a client-generated UUID v4 `Idempotency-Key`.
 - Reuse the exact same key only when retrying the same operation with identical input. A changed request with the same scoped key returns `409 IDEMPOTENCY_CONFLICT`.
@@ -237,7 +246,7 @@ Logs are structured JSON. Correlation IDs are also attached to OpenTelemetry spa
 
 The versioned scenario uses `grafana/k6:2.3.0`, seeds 50 isolated customers through the REST API, creates EUR and USD accounts, and funds the EUR source accounts through deposits. It runs a separate 10-second read-only warm-up, waits five seconds for those workers to stop, and then holds 50 active request workers without think-time for a 60-second measured interval.
 
-The standard measured mix is 1 percent login, 75 percent account and history reads, and 24 percent money operations. Only the measured interval contributes to the endpoint trends, check count, and error rate. The runner exports median, p95, and p99 values and validates that every endpoint group contains those statistics. It exits nonzero when an acceptance threshold fails.
+The standard measured mix is 1 percent login, 75 percent account and history reads, and 24 percent money operations. Only the measured interval contributes to the endpoint trends, check count, and error rate. The runner exports median, p95, and p99 values and validates that every endpoint group contains those statistics. Standard business endpoints have a one-second p99 threshold. Login remains measured and visible but uses a separate two-second p99 threshold because credential verification deliberately performs CPU-intensive password hashing. The runner exits nonzero when an acceptance threshold fails.
 
 Start an application configured for the controlled workload:
 

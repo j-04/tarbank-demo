@@ -1,14 +1,14 @@
 package com.tarbank.account.application;
 
-import com.tarbank.account.api.AccountController.AccountCreatedResponse;
-import com.tarbank.account.api.AccountController.AccountDetails;
-import com.tarbank.account.api.AccountController.AccountPage;
-import com.tarbank.account.api.AccountController.AccountStatusResponse;
-import com.tarbank.account.api.AccountController.AccountSummary;
-import com.tarbank.account.api.AccountController.ChangeAccountStatusRequest;
-import com.tarbank.account.api.AccountController.CreateAccountRequest;
-import com.tarbank.account.api.AccountController.DailyLimits;
-import com.tarbank.account.api.AccountController.LimitDetails;
+import com.tarbank.account.api.AccountContracts.AccountCreatedResponse;
+import com.tarbank.account.api.AccountContracts.AccountDetails;
+import com.tarbank.account.api.AccountContracts.AccountPage;
+import com.tarbank.account.api.AccountContracts.AccountStatusResponse;
+import com.tarbank.account.api.AccountContracts.AccountSummary;
+import com.tarbank.account.api.AccountContracts.ChangeAccountStatusRequest;
+import com.tarbank.account.api.AccountContracts.CreateAccountRequest;
+import com.tarbank.account.api.AccountContracts.DailyLimits;
+import com.tarbank.account.api.AccountContracts.LimitDetails;
 import com.tarbank.account.domain.AccountEntity;
 import com.tarbank.account.domain.AccountStatus;
 import com.tarbank.account.persistence.AccountRepository;
@@ -38,6 +38,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -67,6 +68,8 @@ public class AccountService {
 
     private final JsonMapper json;
 
+    private final Clock clock;
+
     public AccountService(AccountRepository accounts,
                           CustomerRepository customers,
                           UserRepository users,
@@ -75,7 +78,8 @@ public class AccountService {
                           RequestIdempotencyService idempotency,
                           AccountNumberGenerator accountNumbers,
                           EffectiveLimitService effectiveLimits,
-                          JsonMapper json) {
+                          JsonMapper json,
+                          Clock clock) {
         this.accounts = accounts;
         this.customers = customers;
         this.users = users;
@@ -85,6 +89,7 @@ public class AccountService {
         this.accountNumbers = accountNumbers;
         this.effectiveLimits = effectiveLimits;
         this.json = json;
+        this.clock = clock;
     }
 
     /**
@@ -123,7 +128,7 @@ public class AccountService {
         }
         ManagerEntity manager = managers.findById(actor.getId())
                                         .orElseThrow(this::accessDenied);
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         AccountEntity account = accounts.saveAndFlush(
                 new AccountEntity(accountNumbers.next(), customer, request.currency(), manager, now));
         audits.save(new AuditEventEntity(actor, "ACCOUNT_CREATED", "ACCOUNT", account.getAccountNumber(),
@@ -232,7 +237,7 @@ public class AccountService {
         }
 
         ManagerEntity manager = manager(principal);
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         account.changeStatus(next, manager, now);
         audits.save(new AuditEventEntity(manager.getUser(), "ACCOUNT_STATUS_CHANGED", "ACCOUNT",
                                          account.getAccountNumber(), CorrelationIdContext.current(),

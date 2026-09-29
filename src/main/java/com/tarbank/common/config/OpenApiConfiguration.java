@@ -1,6 +1,7 @@
 package com.tarbank.common.config;
 
 import com.tarbank.common.api.ApiErrorResponse;
+import com.tarbank.common.http.ApiRequestHeaders;
 import com.tarbank.security.api.AuthController;
 import io.swagger.v3.core.converter.ModelConverters;
 import io.swagger.v3.oas.models.Components;
@@ -26,12 +27,6 @@ class OpenApiConfiguration {
 
     private static final String ERROR_SCHEMA = "#/components/schemas/ApiErrorResponse";
 
-    private static final String UUID_V4_PATTERN =
-            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$";
-
-    private static final String ETAG_PATTERN =
-            "^(?:\"(?:customer|account)-v(?:0|[1-9][0-9]*)\"|(?:customer|account)-v(?:0|[1-9][0-9]*))$";
-
     private static final Map<String, String> COMMON_ERRORS = commonErrors();
 
     private static void documentConcurrencyHeaders(io.swagger.v3.oas.models.Operation operation) {
@@ -47,15 +42,15 @@ class OpenApiConfiguration {
                          parameter.setSchema(new Schema<String>()
                                                      .type("string")
                                                      .format("uuid")
-                                                     .pattern(UUID_V4_PATTERN));
+                                                     .pattern(ApiRequestHeaders.UUID_V4_PATTERN));
                      } else if ("If-Match".equalsIgnoreCase(parameter.getName())) {
                          parameter.setRequired(true);
                          parameter.setDescription(
                                  "Latest quoted customer-vN or account-vN ETag returned by the resource; "
                                          + "the equivalent unquoted value is also accepted.");
-                         parameter.setSchema(new Schema<String>()
+                        parameter.setSchema(new Schema<String>()
                                                      .type("string")
-                                                     .pattern(ETAG_PATTERN));
+                                                     .pattern(ApiRequestHeaders.ENTITY_ETAG_PATTERN));
                      }
                  });
     }

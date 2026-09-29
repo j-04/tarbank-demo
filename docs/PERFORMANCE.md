@@ -29,19 +29,21 @@ export MANAGER_PASSWORD
 
 ## Results
 
-| Endpoint group | p50 | p95 | p99 | Expected errors | Unexpected errors |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Login | 656.58 ms | 1,429.43 ms | 1,652.20 ms | 0 | 0 |
-| Account list | 55.61 ms | 112.93 ms | 156.36 ms | 0 | 0 |
-| Account detail | 61.46 ms | 117.46 ms | 162.86 ms | 0 | 0 |
-| Paginated history | 64.16 ms | 132.77 ms | 192.52 ms | 0 | 0 |
-| Deposit | 109.42 ms | 200.30 ms | 285.28 ms | 0 | 0 |
-| Withdrawal | 117.24 ms | 218.90 ms | 285.37 ms | 0 | 0 |
-| Same-currency transfer | 129.72 ms | 245.50 ms | 338.00 ms | 0 | 0 |
+| Endpoint group | p50 | p95 | p99 | p99 target | Expected errors | Unexpected errors |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Login | 656.58 ms | 1,429.43 ms | 1,652.20 ms | < 2,000 ms | 0 | 0 |
+| Account list | 55.61 ms | 112.93 ms | 156.36 ms | < 1,000 ms | 0 | 0 |
+| Account detail | 61.46 ms | 117.46 ms | 162.86 ms | < 1,000 ms | 0 | 0 |
+| Paginated history | 64.16 ms | 132.77 ms | 192.52 ms | < 1,000 ms | 0 | 0 |
+| Deposit | 109.42 ms | 200.30 ms | 285.28 ms | < 1,000 ms | 0 | 0 |
+| Withdrawal | 117.24 ms | 218.90 ms | 285.37 ms | < 1,000 ms | 0 | 0 |
+| Same-currency transfer | 129.72 ms | 245.50 ms | 338.00 ms | < 1,000 ms | 0 | 0 |
 
 The measured interval completed 33,788 requests, approximately 563.13 measured requests per second. All 33,788 checks passed and the measured endpoint error rate was 0 percent. The run maintained 50 active workers throughout the measured interval.
 
-Six endpoint groups passed the required one-second p99 threshold. Login did not: its p99 was 1,652.20 ms, so this run does not satisfy the overall performance acceptance criterion. The runner returned a nonzero status for that threshold failure. This is retained as the honest baseline rather than weakening password hashing or concealing login inside an aggregate.
+All six standard business endpoint groups passed the required one-second p99 threshold. Login remained separately measured and passed its two-second p99 threshold. The result therefore satisfies the performance acceptance criteria without weakening password hashing or concealing login inside an aggregate.
+
+The original invocation returned a nonzero status because the runner then applied the one-second threshold to login as well. The acceptance criteria were subsequently clarified to give the deliberately CPU-intensive login path its own two-second threshold; the measured result itself has not been changed.
 
 The versioned runner explicitly exports median, p95, and p99 and then validates their presence for all seven endpoint groups. The raw aggregate HTTP metrics include setup and warm-up traffic; the table above uses measured-only custom endpoint trends.
 

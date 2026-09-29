@@ -120,8 +120,9 @@ public class MoneyQueryRepository {
     }
 
     /**
-     * Applies the already validated balance while incrementing the optimistic version in the same
-     * SQL update. The caller must hold the account's pessimistic write lock.
+     * Applies the already validated balance without changing the account's management version.
+     * The version is reserved for ETag-protected administrative changes, while money serialization
+     * is provided by the pessimistic write lock that the caller must hold.
      *
      * @param accountId locked account to update
      * @param balance exact post-operation balance

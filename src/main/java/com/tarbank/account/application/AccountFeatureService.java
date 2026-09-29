@@ -1,9 +1,9 @@
 package com.tarbank.account.application;
 
-import com.tarbank.account.api.AccountController.DailyLimitUpdateRequest;
-import com.tarbank.account.api.AccountController.DailyLimitUpdateResponse;
-import com.tarbank.account.api.AccountController.TransactionHistoryItem;
-import com.tarbank.account.api.AccountController.TransactionHistoryPage;
+import com.tarbank.account.api.AccountContracts.DailyLimitUpdateRequest;
+import com.tarbank.account.api.AccountContracts.DailyLimitUpdateResponse;
+import com.tarbank.account.api.AccountContracts.TransactionHistoryItem;
+import com.tarbank.account.api.AccountContracts.TransactionHistoryPage;
 import com.tarbank.account.domain.AccountEntity;
 import com.tarbank.account.domain.AccountLimitOverrideEntity;
 import com.tarbank.account.persistence.AccountFeatureQueryRepository;

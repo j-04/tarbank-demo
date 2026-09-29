@@ -13,4 +13,9 @@ public record JwtProperties(
         @NotBlank String issuer,
         String signingKey,
         @NotNull Duration accessTokenTtl) {
+    public JwtProperties {
+        if (accessTokenTtl != null && (accessTokenTtl.isZero() || accessTokenTtl.isNegative())) {
+            throw new IllegalArgumentException("JWT access token TTL must be positive.");
+        }
+    }
 }

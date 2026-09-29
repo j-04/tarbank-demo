@@ -1,25 +1,20 @@
 package com.tarbank.account.api;
 
+import com.tarbank.account.api.AccountContracts.*;
+
 import com.tarbank.account.application.AccountFeatureService;
 import com.tarbank.account.application.AccountService;
-import com.tarbank.account.domain.AccountStatus;
-import com.tarbank.account.domain.Currency;
 import com.tarbank.common.api.ApiSuccessResponse;
-import com.tarbank.common.http.ApiException;
+import com.tarbank.common.http.ApiRequestHeaders;
 import com.tarbank.common.http.CorrelationIdContext;
-import com.tarbank.money.domain.TransactionStatus;
-import com.tarbank.money.domain.TransactionType;
 import com.tarbank.security.application.TarbankPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.headers.Header;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,22 +27,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
-import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping(value = "/api/v1/accounts", produces = MediaType.APPLICATION_JSON_VALUE)
 @Tag(name = "Accounts", description = "Customer-owned account access, lifecycle, limits, and history.")
 public class AccountController {
-    private static final Pattern ACCOUNT_ETAG = Pattern.compile("^account-v(0|[1-9][0-9]*)$");
-
-    private static final Pattern UUID_V4 = Pattern.compile(
-            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$");
-
     private final AccountService accounts;
 
     private final AccountFeatureService features;
@@ -82,7 +67,7 @@ public class AccountController {
             @AuthenticationPrincipal TarbankPrincipal principal) {
         var result = accounts.find(accountNumber, principal);
         return ResponseEntity.ok()
-                             .eTag(etag(result.version()))
+                             .eTag(ApiRequestHeaders.entityTag("account", result.version()))
                              .body(new ApiSuccessResponse<>(result.details(), CorrelationIdContext.current()));
     }
 
@@ -101,9 +86,11 @@ public class AccountController {
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @AuthenticationPrincipal TarbankPrincipal principal,
             @Valid @RequestBody ChangeAccountStatusRequest request) {
-        var result = accounts.changeStatus(accountNumber, parseIfMatch(ifMatch), request, principal);
+        var result = accounts.changeStatus(
+                accountNumber, ApiRequestHeaders.parseEntityVersion(ifMatch, "account", "TAR-ACCOUNT-004"),
+                request, principal);
         return ResponseEntity.ok()
-                             .eTag(etag(result.version()))
+                             .eTag(ApiRequestHeaders.entityTag("account", result.version()))
                              .body(new ApiSuccessResponse<>(result.response(), CorrelationIdContext.current()));
     }
 
@@ -125,11 +112,12 @@ public class AccountController {
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @AuthenticationPrincipal TarbankPrincipal principal,
             @Valid @RequestBody DailyLimitUpdateRequest request) {
-        var result = features.updateLimits(accountNumber, parseIfMatch(ifMatch), principal,
-                                           parseIdempotencyKey(idempotencyKey), request);
+        var result = features.updateLimits(
+                accountNumber, ApiRequestHeaders.parseEntityVersion(ifMatch, "account", "TAR-ACCOUNT-004"),
+                principal, ApiRequestHeaders.parseUuidV4(idempotencyKey), request);
         return ResponseEntity.status(result.status())
-                             .eTag(etag(result.body()
-                                              .version()))
+                             .eTag(ApiRequestHeaders.entityTag("account", result.body()
+                                                                                .version()))
                              .body(new ApiSuccessResponse<>(result.body()
                                                                   .response(),
                                                             CorrelationIdContext.current()));
@@ -152,93 +140,4 @@ public class AccountController {
                                         CorrelationIdContext.current());
     }
 
-    private UUID parseIdempotencyKey(String value) {
-        if (value == null || !UUID_V4.matcher(value)
-                                     .matches()) {
-            throw validation();
-        }
-        return UUID.fromString(value);
-    }
-
-    private int parseIfMatch(String value) {
-        if (value == null) {
-            throw new ApiException(HttpStatus.PRECONDITION_REQUIRED, "PRECONDITION_REQUIRED",
-                                   "If-Match is required.", "TAR-ACCOUNT-004");
-        }
-        String normalized = value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")
-                ? value.substring(1, value.length() - 1) : value;
-        Matcher matcher = ACCOUNT_ETAG.matcher(normalized);
-        if (!matcher.matches()) {
-            throw validation();
-        }
-        try {
-            return Integer.parseInt(matcher.group(1));
-        } catch (NumberFormatException exception) {
-            throw validation();
-        }
-    }
-
-    private String etag(int version) {
-        return "\"account-v" + version + "\"";
-    }
-
-    private ApiException validation() {
-        return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR",
-                                "The request is invalid.", "TAR-API-001");
-    }
-
-    public record CreateAccountRequest(@NotNull Currency currency) {
-    }
-
-    public record AccountCreatedResponse(String accountNumber, Long customerId, Currency currency,
-                                         String availableBalance, AccountStatus status) {
-    }
-
-    public record AccountSummary(String accountNumber, Currency currency, String availableBalance,
-                                 AccountStatus status) {
-    }
-
-    public record AccountPage(List<AccountSummary> items, String nextCursor) {
-    }
-
-    public record LimitDetails(String amount, Instant expiresAt) {
-    }
-
-    public record DailyLimits(LimitDetails withdrawal, LimitDetails transfer) {
-    }
-
-    public record AccountDetails(String accountNumber, Currency currency, String availableBalance,
-                                 AccountStatus status, DailyLimits dailyLimits) {
-    }
-
-    public record ChangeAccountStatusRequest(@NotNull AccountStatus status) {
-    }
-
-    public record AccountStatusResponse(String accountNumber, AccountStatus status) {
-    }
-
-    public record DailyLimitUpdateRequest(
-            @Schema(minimum = "1000.0000", maximum = "3000.0000", multipleOf = 0.0001)
-            BigDecimal withdrawalLimit,
-            @Schema(minimum = "1000.0000", maximum = "3000.0000", multipleOf = 0.0001)
-            BigDecimal transferLimit) {
-    }
-
-    public record DailyLimitUpdateResponse(String accountNumber,
-                                           String withdrawalLimit,
-                                           String transferLimit,
-                                           Instant expiresAt) {
-    }
-
-    public record TransactionHistoryItem(UUID transactionId,
-                                         TransactionType type,
-                                         TransactionStatus status,
-                                         String amountDelta,
-                                         String balanceAfter,
-                                         Currency currency,
-                                         Instant createdAt) {
-    }
-
-    public record TransactionHistoryPage(List<TransactionHistoryItem> items, String nextCursor) {
-    }
 }

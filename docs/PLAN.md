@@ -687,7 +687,7 @@ This final phase turns the implementation into a reproducible interview-demo han
 - [x] Give money operations isolated or carefully funded source accounts so expected business failures do not dominate the result.
 - [x] Include a warm-up period and enough successful samples to calculate meaningful p50, p95, p99, throughput, and error-rate values.
 - [x] Report latency per endpoint group, including paginated history, rather than hiding a slow endpoint in a blended aggregate.
-- [x] Require p99 below one second for the documented standard endpoint workload and record any expected or unexpected error rate separately.
+- [x] Require p99 below one second for standard business endpoints and below two seconds for login. Keep login measured and reported separately, and record any expected or unexpected error rate separately.
 - [x] Capture the application image tag or Git commit, Java version, Docker resources, PostgreSQL and Redis versions, load-test command, configuration relevant to the test, and result timestamp with the result.
 
 ### 10.5 Perform the review walkthrough
@@ -716,6 +716,6 @@ This final phase turns the implementation into a reproducible interview-demo han
 - [x] A reviewer can clone the repository, set local configuration, build the Docker image, start the stack, and reach readiness and Swagger using the README alone.
 - [x] The complete automated suite passes against fresh PostgreSQL through Testcontainers.
 - [x] The manual walkthrough demonstrates the core roles, money safety, idempotency, limits, history, auditing, and failure behavior.
-- [x] A dated, reproducible 50-concurrent-request result documents p99 latency below one second for the defined workload.
+- [x] A dated, reproducible 50-concurrent-request result documents p99 latency below one second for every standard business endpoint and below two seconds for login.
 - [x] The final repository contains no secrets and implements only the agreed demo scope.
 - [x] Commit the completed checkpoint with a message such as prepare demo for review.

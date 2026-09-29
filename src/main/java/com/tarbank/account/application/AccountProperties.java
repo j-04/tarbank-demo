@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
+import java.util.EnumSet;
 import java.util.Map;
 
 @Validated
@@ -17,6 +18,9 @@ import java.util.Map;
 public record AccountProperties(@NotEmpty Map<Currency, @Valid DefaultLimits> defaultLimits) {
     public AccountProperties {
         defaultLimits = defaultLimits == null ? Map.of() : Map.copyOf(defaultLimits);
+        if (!defaultLimits.keySet().containsAll(EnumSet.allOf(Currency.class))) {
+            throw new IllegalArgumentException("Default account limits must cover every supported currency.");
+        }
     }
 
     public DefaultLimits forCurrency(Currency currency) {

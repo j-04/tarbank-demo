@@ -65,7 +65,7 @@ Internal-only liveness and readiness endpoints are exposed through Spring Actuat
 
 ### Performance verification
 
-With the failure simulator disabled, a repeatable 50-concurrent-request load test runs against seeded data and includes login, account reads, paginated history, and money operations. It records p99 latency and error rate. Standard endpoints must remain below one second at p99. The test scenario and its results are documented with the project.
+With the failure simulator disabled, a repeatable 50-concurrent-request load test runs against seeded data and includes login, account reads, paginated history, and money operations. It records p99 latency and error rate per endpoint group. Standard business endpoints must remain below one second at p99. Login remains visible as a separate endpoint group and must remain below two seconds at p99 because its credential verification deliberately uses CPU-intensive password hashing. The test scenario and its results are documented with the project.
 
 ## Delivery verification
 

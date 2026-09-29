@@ -17,6 +17,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -110,6 +112,20 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiErrorResponse> method() {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                              .body(ApiErrorResponses.validation(correlationId(), List.of()));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> unsupportedMediaType() {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                             .body(ApiErrorResponses.error(correlationId(), "UNSUPPORTED_MEDIA_TYPE",
+                                                           "The request media type is not supported."));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<ApiErrorResponse> notAcceptable() {
+        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE)
+                             .body(ApiErrorResponses.error(correlationId(), "NOT_ACCEPTABLE",
+                                                           "The requested response media type is not supported."));
     }
 
     @ExceptionHandler(Exception.class)

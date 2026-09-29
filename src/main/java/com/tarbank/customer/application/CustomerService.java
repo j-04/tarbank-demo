@@ -1,15 +1,13 @@
 package com.tarbank.customer.application;
 
+import com.tarbank.common.application.IdempotencyFingerprintService;
 import com.tarbank.common.application.RequestIdempotencyService;
 import com.tarbank.common.domain.AuditEventEntity;
 import com.tarbank.common.http.ApiException;
 import com.tarbank.common.http.CorrelationIdContext;
 import com.tarbank.common.persistence.AuditEventRepository;
-import com.tarbank.customer.api.CustomerController.CreateCustomerRequest;
-import com.tarbank.customer.api.CustomerController.CustomerDetails;
-import com.tarbank.customer.api.CustomerController.CustomerSummary;
-import com.tarbank.customer.api.CustomerController.ResidentialAddress;
-import com.tarbank.customer.api.CustomerController.SafeIdentityDocument;
+import com.tarbank.customer.api.CustomerContracts.CreateCustomerRequest;
+import com.tarbank.customer.api.CustomerContracts.CustomerSummary;
 import com.tarbank.customer.domain.CustomerEntity;
 import com.tarbank.customer.persistence.CustomerRepository;
 import com.tarbank.security.application.PasswordPolicy;
@@ -27,18 +25,23 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.HexFormat;
+import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class CustomerService {
+    private static final String CREATE_OPERATION = "CUSTOMER_CREATE";
+
+    private static final String CREATE_SCOPE = "customers";
+
+    private static final Set<String> ISO_COUNTRIES = Set.of(Locale.getISOCountries());
+
     private final UserRepository users;
 
     private final ManagerRepository managers;
@@ -57,7 +60,9 @@ public class CustomerService {
 
     private final JsonMapper json;
 
-    private final Clock clock = Clock.systemUTC();
+    private final IdempotencyFingerprintService fingerprints;
+
+    private final Clock clock;
 
     public CustomerService(UserRepository users,
                            ManagerRepository managers,
@@ -67,7 +72,9 @@ public class CustomerService {
                            SensitiveDocumentService documents,
                            RequestIdempotencyService idempotency,
                            AuditEventRepository audits,
-                           JsonMapper json) {
+                           JsonMapper json,
+                           IdempotencyFingerprintService fingerprints,
+                           Clock clock) {
         this.users = users;
         this.managers = managers;
         this.customers = customers;
@@ -77,6 +84,8 @@ public class CustomerService {
         this.idempotency = idempotency;
         this.audits = audits;
         this.json = json;
+        this.fingerprints = fingerprints;
+        this.clock = clock;
     }
 
     /**
@@ -100,32 +109,29 @@ public class CustomerService {
                                                            .number());
         String documentHash = documents.lookupHash(documentNumber);
         validateReplayStable(request, username);
-        String requestHash = hash(new CustomerCreateHash(username, request.password(), trim(request.firstName()),
-                                                         nullableTrim(request.middleName()), trim(request.lastName()),
-                                                         request.dateOfBirth(),
-                                                         nullableTrim(request.email()), request.phoneNumber()
-                                                                                               .trim(),
-                                                         new AddressHash(country(request.residentialAddress()
-                                                                                        .country()),
-                                                                         trim(request.residentialAddress()
-                                                                                     .city()),
-                                                                         trim(request.residentialAddress()
-                                                                                     .postalCode()),
-                                                                         trim(request.residentialAddress()
-                                                                                     .line1()),
-                                                                         nullableTrim(request.residentialAddress()
-                                                                                             .line2())),
-                                                         new DocumentHash(trim(request.identityDocument()
-                                                                                      .type()).toUpperCase(Locale.ROOT),
-                                                                          country(request.identityDocument()
-                                                                                         .issuingCountry()),
-                                                                          documentNumber,
-                                                                          request.identityDocument()
-                                                                                 .expiresOn()),
-                                                         request.timezone()
-                                                                .trim()));
+        String requestHash = fingerprint(actor.getId(),
+                                         new CustomerCreateHash(username, request.password(),
+                                                                trim(request.firstName()),
+                                                                nullableTrim(request.middleName()),
+                                                                trim(request.lastName()), request.dateOfBirth(),
+                                                                nullableTrim(request.email()),
+                                                                request.phoneNumber().trim(),
+                                                                new AddressHash(
+                                                                        country(request.residentialAddress().country()),
+                                                                        trim(request.residentialAddress().city()),
+                                                                        trim(request.residentialAddress().postalCode()),
+                                                                        trim(request.residentialAddress().line1()),
+                                                                        nullableTrim(request.residentialAddress().line2())),
+                                                                new DocumentHash(
+                                                                        trim(request.identityDocument().type())
+                                                                                .toUpperCase(Locale.ROOT),
+                                                                        country(request.identityDocument()
+                                                                                       .issuingCountry()),
+                                                                        documentNumber,
+                                                                        request.identityDocument().expiresOn()),
+                                                                request.timezone().trim()));
         try {
-            return idempotency.execute(actor, "CUSTOMER_CREATE", "customers", key, requestHash,
+            return idempotency.execute(actor, CREATE_OPERATION, CREATE_SCOPE, key, requestHash,
                                        CustomerSummary.class, HttpStatus.CREATED.value(), () -> {
                         validateFirstExecution(request);
                         return createFirst(actor, username, documentNumber, documentHash, request);
@@ -199,28 +205,6 @@ public class CustomerService {
         return new CustomerSummary(customer.getUserId(), user.getUsername(), user.getStatus());
     }
 
-    public CustomerDetails find(Long id) {
-        CustomerEntity customer = customers.findById(id)
-                                           .orElseThrow(this::notFound);
-        return new CustomerDetails(customer.getUserId(), customer.getUser()
-                                                                 .getUsername(), customer.getUser()
-                                                                                         .getStatus(),
-                                   customer.getUser()
-                                           .getFirstName(), customer.getUser()
-                                                                    .getMiddleName(), customer.getUser()
-                                                                                              .getLastName(),
-                                   customer.getDateOfBirth(),
-                                   customer.getEmail(), customer.getPhoneNumber(),
-                                   new ResidentialAddress(customer.getResidenceCountry(),
-                                                          customer.getResidenceCity(),
-                                                          customer.getResidencePostalCode(),
-                                                          customer.getResidenceAddressLine1(),
-                                                          customer.getResidenceAddressLine2()),
-                                   new SafeIdentityDocument(customer.getDocumentType(),
-                                                            customer.getDocumentIssuingCountry(),
-                                                            customer.getDocumentExpiresOn()), customer.getTimezone());
-    }
-
     private void validateReplayStable(CreateCustomerRequest request,
                                       String username) {
         if (!username.matches("^[a-z][a-z0-9._-]{2,31}$")) {
@@ -249,7 +233,7 @@ public class CustomerService {
     private void validateFirstExecution(CreateCustomerRequest request) {
         if (request.dateOfBirth() == null || request.dateOfBirth()
                                                     .plusYears(18)
-                                                    .isAfter(LocalDate.now(clock))) {
+                                                    .isAfter(currentUtcDate())) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "CUSTOMER_MUST_BE_ADULT",
                                    "Customer must be at least 18 years old.", "TAR-CUSTOMER-001");
         }
@@ -257,9 +241,13 @@ public class CustomerService {
                    .expiresOn() != null
                 && request.identityDocument()
                           .expiresOn()
-                          .isBefore(LocalDate.now(clock))) {
+                          .isBefore(currentUtcDate())) {
             throw invalid();
         }
+    }
+
+    private LocalDate currentUtcDate() {
+        return LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 
     private ApiException translateUniqueConstraint(DataIntegrityViolationException exception) {
@@ -300,8 +288,7 @@ public class CustomerService {
 
     private String country(String value) {
         String country = trim(value).toUpperCase(Locale.ROOT);
-        if (!Set.of(Locale.getISOCountries())
-                .contains(country)) {
+        if (!ISO_COUNTRIES.contains(country)) {
             throw invalid();
         }
         return country;
@@ -324,13 +311,12 @@ public class CustomerService {
                                      .isEmpty() ? null : value.trim();
     }
 
-    private String hash(Object body) {
+    private String fingerprint(long actorId,
+                               Object body) {
         try {
-            return HexFormat.of()
-                            .formatHex(MessageDigest.getInstance("SHA-256")
-                                                    .digest(json.writeValueAsBytes(body)));
+            return fingerprints.payload(actorId, CREATE_OPERATION, CREATE_SCOPE, json.writeValueAsBytes(body));
         } catch (Exception exception) {
-            throw new IllegalStateException("Request hashing is unavailable.", exception);
+            throw new IllegalStateException("Request fingerprinting is unavailable.", exception);
         }
     }
 

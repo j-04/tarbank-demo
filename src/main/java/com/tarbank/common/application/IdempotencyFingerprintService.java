@@ -25,12 +25,31 @@ public class IdempotencyFingerprintService {
     public Fingerprints credential(String operation,
                                    String scope,
                                    String credential) {
-        return new Fingerprints(hmac(operation, scope, credential), legacySha256(credential));
+        return new Fingerprints(hmac(operation, scope, credential.getBytes(StandardCharsets.UTF_8)),
+                                legacySha256(credential));
+    }
+
+    /**
+     * Creates a versioned, domain-separated fingerprint for a canonical request payload. Including
+     * the actor and idempotency namespace prevents the same serialized input from producing a
+     * reusable verifier in another user's or operation's namespace.
+     *
+     * @param actorId authenticated actor that owns the idempotency record
+     * @param operation stable operation name stored with the record
+     * @param scope stable resource scope stored with the record
+     * @param canonicalPayload serialized business-significant input in canonical field order
+     * @return lowercase hexadecimal HMAC-SHA-256 fingerprint
+     */
+    public String payload(long actorId,
+                          String operation,
+                          String scope,
+                          byte[] canonicalPayload) {
+        return hmac(operation, "actor:" + actorId + ':' + scope, canonicalPayload);
     }
 
     private String hmac(String operation,
                         String scope,
-                        String credential) {
+                        byte[] value) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(
@@ -43,7 +62,7 @@ public class IdempotencyFingerprintService {
             mac.update(scope.getBytes(StandardCharsets.UTF_8));
             mac.update((byte) 0);
             return HexFormat.of()
-                            .formatHex(mac.doFinal(credential.getBytes(StandardCharsets.UTF_8)));
+                            .formatHex(mac.doFinal(value));
         } catch (Exception exception) {
             throw new IllegalStateException("Idempotency fingerprinting is unavailable.", exception);
         }

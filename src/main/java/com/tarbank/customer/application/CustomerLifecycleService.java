@@ -10,16 +10,16 @@ import com.tarbank.common.domain.AuditEventEntity;
 import com.tarbank.common.http.ApiException;
 import com.tarbank.common.http.CorrelationIdContext;
 import com.tarbank.common.persistence.AuditEventRepository;
-import com.tarbank.customer.api.CustomerController.ChangeCustomerStatusRequest;
-import com.tarbank.customer.api.CustomerController.CustomerDetails;
-import com.tarbank.customer.api.CustomerController.CustomerPage;
-import com.tarbank.customer.api.CustomerController.CustomerStatusResponse;
-import com.tarbank.customer.api.CustomerController.CustomerSummary;
-import com.tarbank.customer.api.CustomerController.PasswordResetRequest;
-import com.tarbank.customer.api.CustomerController.PasswordResetResponse;
-import com.tarbank.customer.api.CustomerController.ResidentialAddress;
-import com.tarbank.customer.api.CustomerController.SafeIdentityDocument;
-import com.tarbank.customer.api.CustomerController.UpdateCustomerRequest;
+import com.tarbank.customer.api.CustomerContracts.ChangeCustomerStatusRequest;
+import com.tarbank.customer.api.CustomerContracts.CustomerDetails;
+import com.tarbank.customer.api.CustomerContracts.CustomerPage;
+import com.tarbank.customer.api.CustomerContracts.CustomerStatusResponse;
+import com.tarbank.customer.api.CustomerContracts.CustomerSummary;
+import com.tarbank.customer.api.CustomerContracts.PasswordResetRequest;
+import com.tarbank.customer.api.CustomerContracts.PasswordResetResponse;
+import com.tarbank.customer.api.CustomerContracts.ResidentialAddress;
+import com.tarbank.customer.api.CustomerContracts.SafeIdentityDocument;
+import com.tarbank.customer.api.CustomerContracts.UpdateCustomerRequest;
 import com.tarbank.customer.domain.CustomerEntity;
 import com.tarbank.customer.persistence.CustomerQueryRepository;
 import com.tarbank.customer.persistence.CustomerRepository;
@@ -37,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -70,6 +71,8 @@ public class CustomerLifecycleService {
 
     private final JsonMapper json;
 
+    private final Clock clock;
+
     public CustomerLifecycleService(CustomerRepository customers,
                                     CustomerQueryRepository customerQueries,
                                     UserRepository users,
@@ -80,7 +83,8 @@ public class CustomerLifecycleService {
                                     IdempotencyFingerprintService fingerprints,
                                     PasswordEncoder passwords,
                                     PasswordPolicy passwordPolicy,
-                                    JsonMapper json) {
+                                    JsonMapper json,
+                                    Clock clock) {
         this.customers = customers;
         this.customerQueries = customerQueries;
         this.users = users;
@@ -92,6 +96,7 @@ public class CustomerLifecycleService {
         this.passwords = passwords;
         this.passwordPolicy = passwordPolicy;
         this.json = json;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -139,7 +144,7 @@ public class CustomerLifecycleService {
         CustomerEntity customer = lockCustomer(id);
         requireVersion(customer, expectedVersion);
         ManagerEntity manager = manager(principal);
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         Set<String> changedFields = new TreeSet<>();
 
         String firstName = suppliedText(request.firstNameSupplied(), request.getFirstName(), "firstName", 100);
@@ -220,7 +225,7 @@ public class CustomerLifecycleService {
                                    "The requested status transition is not allowed.", "TAR-CUSTOMER-005");
         }
         ManagerEntity manager = manager(principal);
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         customer.changeStatus(next, manager, now);
         List<AccountEntity> affected = List.of();
         if (next == UserStatus.BLOCKED || next == UserStatus.DEACTIVATED) {
@@ -288,7 +293,7 @@ public class CustomerLifecycleService {
         if (customerUser.getRole() != com.tarbank.security.domain.Role.CUSTOMER) {
             throw notFound();
         }
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         customerUser.resetPassword(passwords.encode(newPassword), now);
         audits.save(new AuditEventEntity(actor, "CUSTOMER_PASSWORD_RESET", "CUSTOMER", customerId.toString(),
                                          CorrelationIdContext.current(), null, now));

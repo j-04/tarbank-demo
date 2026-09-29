@@ -9,6 +9,9 @@ import java.time.Duration;
 
 @Service
 public class AuthService {
+    private static final String DUMMY_PASSWORD_HASH =
+            "$2b$10$VlSPJVuNx8TZRyRpRt3IvOZjqPEdb1n5UEwdWwngEpzWnbVs.xIHa";
+
     private final UserRepository users;
 
     private final PasswordEncoder passwords;
@@ -33,12 +36,15 @@ public class AuthService {
 
     public JwtService.IssuedToken login(String username,
                                         String password) {
-        var user = users.findByUsername(username.trim()
-                                                .toLowerCase(java.util.Locale.ROOT))
-                        .filter(u -> u.getStatus() == UserStatus.ACTIVE)
-                        .filter(u -> passwords.matches(password, u.getPasswordHash()))
-                        .filter(profiles::matches)
-                        .orElseThrow(() -> new InvalidCredentialsException());
+        var candidate = users.findByUsername(username.trim()
+                                                     .toLowerCase(java.util.Locale.ROOT));
+        var activeUser = candidate.filter(user -> user.getStatus() == UserStatus.ACTIVE);
+        String passwordHash = activeUser.map(user -> user.getPasswordHash())
+                                        .orElse(DUMMY_PASSWORD_HASH);
+        boolean passwordMatches = passwords.matches(password, passwordHash);
+        var user = activeUser.filter(ignored -> passwordMatches)
+                             .filter(profiles::matches)
+                             .orElseThrow(InvalidCredentialsException::new);
         return jwt.issue(user.getId(), user.getRole(), user.getCredentialVersion());
     }
 

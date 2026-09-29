@@ -6,6 +6,7 @@ cd "$project_directory"
 
 ./gradlew --no-daemon clean check
 docker compose config --quiet
+./scripts/verify-redis-persistence.sh
 git diff --check
 
-echo "Verification passed: tests, migrations, configuration binding, Compose, and diff checks are clean."
+echo "Verification passed: tests, migrations, configuration binding, Compose persistence, and diff checks are clean."

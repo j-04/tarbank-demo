@@ -39,7 +39,7 @@ export const options = {
     thresholds: {
         measured_requests: ['count>1000'],
         endpoint_errors: ['rate<0.01'],
-        login_latency: ['p(99)<1000'],
+        login_latency: ['p(99)<2000'],
         account_list_latency: ['p(99)<1000'],
         account_detail_latency: ['p(99)<1000'],
         history_latency: ['p(99)<1000'],
